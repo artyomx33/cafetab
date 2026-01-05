@@ -38,7 +38,6 @@ export default function KitchenOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
   const [barCategoryId, setBarCategoryId] = useState<string | null>(null);
-  const supabase = createClient();
 
   // Redirect if not logged in
   useEffect(() => {
@@ -50,6 +49,7 @@ export default function KitchenOrdersPage() {
   // Fetch bar category ID (assuming drinks category is named "Drinks" or "Bar")
   useEffect(() => {
     const fetchBarCategory = async () => {
+      const supabase = createClient();
       const { data } = await supabase
         .from("cafe_categories")
         .select("id")
@@ -63,11 +63,12 @@ export default function KitchenOrdersPage() {
     };
 
     fetchBarCategory();
-  }, [supabase]);
+  }, []);
 
   // Fetch orders from database
   const fetchOrders = useCallback(async () => {
     try {
+      const supabase = createClient();
       const { data: ordersData, error } = await supabase
         .from("cafe_orders")
         .select(
@@ -136,7 +137,7 @@ export default function KitchenOrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   // Initial fetch
   useEffect(() => {
@@ -172,6 +173,7 @@ export default function KitchenOrdersPage() {
   // Handle order status updates
   const handleStartOrder = async (orderId: string) => {
     try {
+      const supabase = createClient();
       const { error } = await supabase
         .from("cafe_orders")
         .update({ status: "preparing" })
@@ -195,6 +197,7 @@ export default function KitchenOrdersPage() {
 
   const handleMarkReady = async (orderId: string) => {
     try {
+      const supabase = createClient();
       const { error } = await supabase
         .from("cafe_orders")
         .update({
@@ -224,6 +227,7 @@ export default function KitchenOrdersPage() {
 
   const handleServeOrder = async (orderId: string) => {
     try {
+      const supabase = createClient();
       const { error } = await supabase
         .from("cafe_orders")
         .update({
