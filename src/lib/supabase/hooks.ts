@@ -31,7 +31,10 @@ import type {
 // Re-export types from @/types
 export type { TabWithItemsType as TabWithItems, CategoryWithProductsType as CategoryWithProducts }
 
-const supabase = createClient()
+// Helper to get supabase client (lazy initialization to avoid build errors)
+function getSupabase() {
+  return createClient()
+}
 
 // Seller hooks
 export function useVerifyPin() {
@@ -42,13 +45,28 @@ export function useVerifyPin() {
     setLoading(true)
     setError(null)
 
-    const pinHash = `hashed_${pin}`
-    const { data, error: err } = await supabase
+    const supabase = getSupabase()
+    // Try plain pin first (for database-stored plain pins)
+    let { data, error: err } = await supabase
       .from('cafe_sellers')
       .select('*')
-      .eq('pin_hash', pinHash)
+      .eq('pin_hash', pin)
       .eq('is_active', true)
       .single()
+
+    // If not found, try hashed version
+    if (err || !data) {
+      const pinHash = `hashed_${pin}`
+      const result = await supabase
+        .from('cafe_sellers')
+        .select('*')
+        .eq('pin_hash', pinHash)
+        .eq('is_active', true)
+        .single()
+
+      data = result.data
+      err = result.error
+    }
 
     if (err || !data) {
       setError('Invalid PIN')
@@ -69,6 +87,7 @@ export function useTables() {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     const { data: tablesData } = await supabase
       .from('cafe_tables')
       .select(`
@@ -111,6 +130,7 @@ export function useTableById(id: string) {
     }
 
     const fetchTable = async () => {
+      const supabase = getSupabase()
       const { data } = await supabase
         .from('cafe_tables')
         .select('*')
@@ -132,6 +152,7 @@ export function useCreateTable() {
 
   const create = useCallback(async (number: string, section?: string): Promise<Table> => {
     setLoading(true)
+    const supabase = getSupabase()
 
     // Generate unique QR code
     const qrCode = `TBL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -163,6 +184,7 @@ export function useUpdateTable() {
   const update = useCallback(async (id: string, data: Partial<{ number: string; section: string | null; status: TableStatus }>): Promise<Table> => {
     setLoading(true)
 
+    const supabase = getSupabase()
     const { data: table, error } = await supabase
       .from('cafe_tables')
       .update(data)
@@ -184,6 +206,7 @@ export function useDeleteTable() {
 
   const deleteTable = useCallback(async (id: string): Promise<void> => {
     setLoading(true)
+    const supabase = getSupabase()
 
     // Check if table has an active tab
     const { data: table } = await supabase
@@ -216,6 +239,7 @@ export function useCategories() {
 
   useEffect(() => {
     const fetchCategories = async () => {
+      const supabase = getSupabase()
       const { data } = await supabase
         .from('cafe_categories')
         .select(`
@@ -253,6 +277,7 @@ export function useTab(tableId: string) {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     const { data: tabData } = await supabase
       .from('cafe_tabs')
       .select(`
@@ -302,6 +327,7 @@ export function useTab(tableId: string) {
 
   const addItem = useCallback(async (productId: string, quantity: number, sellerId?: string, orderId?: string) => {
     if (!tab) return null
+    const supabase = getSupabase()
 
     // Get product price
     const { data: product } = await supabase
@@ -332,6 +358,7 @@ export function useTab(tableId: string) {
   }, [tab, refresh])
 
   const removeItem = useCallback(async (itemId: string) => {
+    const supabase = getSupabase()
     await supabase
       .from('cafe_tab_items')
       .delete()
@@ -342,6 +369,7 @@ export function useTab(tableId: string) {
 
   const markPaid = useCallback(async () => {
     if (!tab) return false
+    const supabase = getSupabase()
 
     const { error } = await supabase
       .from('cafe_tabs')
@@ -375,6 +403,7 @@ export function useDashboardStats() {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     // Get tables stats
     const { count: totalTables } = await supabase
       .from('cafe_tables')
@@ -481,6 +510,7 @@ export function useAllTables() {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     const { data } = await supabase
       .from('cafe_tables')
       .select(`
@@ -513,6 +543,7 @@ export function useAllProducts() {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     const { data: productsData } = await supabase
       .from('cafe_products')
       .select('*')
@@ -533,6 +564,7 @@ export function useAllProducts() {
   }, [refresh])
 
   const createProduct = useCallback(async (data: { name: string; price: number; category_id: string; description?: string }) => {
+    const supabase = getSupabase()
     const { data: product, error } = await supabase
       .from('cafe_products')
       .insert({
@@ -549,6 +581,7 @@ export function useAllProducts() {
   }, [refresh])
 
   const updateProduct = useCallback(async (id: string, data: Partial<Product>) => {
+    const supabase = getSupabase()
     const { data: product, error } = await supabase
       .from('cafe_products')
       .update(data)
@@ -562,6 +595,7 @@ export function useAllProducts() {
   }, [refresh])
 
   const deleteProduct = useCallback(async (id: string) => {
+    const supabase = getSupabase()
     await supabase
       .from('cafe_products')
       .delete()
@@ -571,6 +605,7 @@ export function useAllProducts() {
   }, [refresh])
 
   const createCategory = useCallback(async (name: string) => {
+    const supabase = getSupabase()
     const { data: category, error } = await supabase
       .from('cafe_categories')
       .insert({
@@ -594,6 +629,7 @@ export function useAllSellers() {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     const { data: sellersData } = await supabase
       .from('cafe_sellers')
       .select('*')
@@ -627,6 +663,7 @@ export function useAllSellers() {
   }, [refresh])
 
   const createSeller = useCallback(async (name: string, pin: string) => {
+    const supabase = getSupabase()
     const { data: seller, error } = await supabase
       .from('cafe_sellers')
       .insert({
@@ -643,6 +680,7 @@ export function useAllSellers() {
   }, [refresh])
 
   const updateSeller = useCallback(async (id: string, data: Partial<Seller>) => {
+    const supabase = getSupabase()
     const { data: seller, error } = await supabase
       .from('cafe_sellers')
       .update(data)
@@ -677,6 +715,7 @@ export function useOpenTab() {
     prepaidAmount?: number
   ): Promise<Tab> => {
     setLoading(true)
+    const supabase = getSupabase()
 
     const { data: tab, error } = await supabase
       .from('cafe_tabs')
@@ -720,6 +759,7 @@ export function useTabByTableId(tableId: string) {
       return
     }
 
+    const supabase = getSupabase()
     const { data: tabData } = await supabase
       .from('cafe_tabs')
       .select(`
@@ -771,6 +811,7 @@ export function useTabByTableId(tableId: string) {
 
   const addItem = useCallback(async (productId: string, quantity: number, sellerId: string) => {
     if (!tab) return null
+    const supabase = getSupabase()
 
     // Get product price
     const { data: product } = await supabase
@@ -801,6 +842,7 @@ export function useTabByTableId(tableId: string) {
 
   const closeTab = useCallback(async () => {
     if (!tab) return false
+    const supabase = getSupabase()
 
     const { error } = await supabase
       .from('cafe_tabs')
@@ -846,6 +888,7 @@ export function useTableByQR(qrCode: string) {
     }
 
     setLoading(true)
+    const supabase = getSupabase()
     const { data: tableData, error: err } = await supabase
       .from('cafe_tables')
       .select('*')
@@ -895,6 +938,7 @@ export function useClientTab(tabId: string | null) {
       return
     }
 
+    const supabase = getSupabase()
     const { data: tabData } = await supabase
       .from('cafe_tabs')
       .select(`
@@ -952,6 +996,7 @@ export function useClientMenu() {
 
   useEffect(() => {
     const fetchMenu = async () => {
+      const supabase = getSupabase()
       const { data } = await supabase
         .from('cafe_categories')
         .select(`
@@ -998,6 +1043,7 @@ export function useCreateOrder(tabId: string | null) {
     if (!tabId) return null
 
     setLoading(true)
+    const supabase = getSupabase()
 
     // Create order
     const { data: order, error: orderError } = await supabase
@@ -1127,6 +1173,7 @@ export function useSendNotification() {
     message: string
   ) => {
     setLoading(true)
+    const supabase = getSupabase()
 
     const { error } = await supabase
       .from('cafe_notifications')
@@ -1151,6 +1198,7 @@ export function useVenueSettings() {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     const { data } = await supabase
       .from('cafe_venue_settings')
       .select('*')
@@ -1166,6 +1214,7 @@ export function useVenueSettings() {
 
   const updateSettings = useCallback(async (updates: Partial<VenueSettings>) => {
     if (!settings) return null
+    const supabase = getSupabase()
 
     const { data, error } = await supabase
       .from('cafe_venue_settings')
@@ -1192,6 +1241,7 @@ export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' 
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     let query = supabase
       .from('cafe_orders')
       .select(`
@@ -1242,6 +1292,7 @@ export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' 
   }, [refresh])
 
   const updateOrderStatus = useCallback(async (orderId: string, newStatus: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled') => {
+    const supabase = getSupabase()
     const updateData: any = { status: newStatus }
 
     if (newStatus === 'ready') {
@@ -1271,6 +1322,7 @@ export function useNotifications(sellerId?: string) {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     let query = supabase
       .from('cafe_notifications')
       .select(`
@@ -1307,6 +1359,7 @@ export function useNotifications(sellerId?: string) {
   }, [refresh])
 
   const markAsRead = useCallback(async (notificationId: string) => {
+    const supabase = getSupabase()
     const { error } = await supabase
       .from('cafe_notifications')
       .update({ read: true })
@@ -1317,6 +1370,7 @@ export function useNotifications(sellerId?: string) {
   }, [refresh])
 
   const markAllAsRead = useCallback(async () => {
+    const supabase = getSupabase()
     let query = supabase
       .from('cafe_notifications')
       .update({ read: true })
@@ -1350,6 +1404,7 @@ export function useProductWithModifiers(productId: string) {
       return
     }
 
+    const supabase = getSupabase()
     // Fetch product
     const { data: productData, error: productError } = await supabase
       .from('cafe_products')
@@ -1419,6 +1474,7 @@ export function useModifierGroups() {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    const supabase = getSupabase()
     const { data } = await supabase
       .from('cafe_modifier_groups')
       .select(`
@@ -1466,6 +1522,7 @@ export function useCreateModifierGroup() {
     sort_order?: number
   }): Promise<ModifierGroup> => {
     setLoading(true)
+    const supabase = getSupabase()
 
     const { data: modifierGroup, error } = await supabase
       .from('cafe_modifier_groups')
@@ -1502,6 +1559,7 @@ export function useCreateModifier() {
     sort_order?: number
   }): Promise<Modifier> => {
     setLoading(true)
+    const supabase = getSupabase()
 
     const { data: modifier, error } = await supabase
       .from('cafe_modifiers')
@@ -1535,6 +1593,7 @@ export function useLinkProductModifierGroup() {
     sort_order?: number
   }): Promise<ProductModifierGroup> => {
     setLoading(true)
+    const supabase = getSupabase()
 
     const { data: link, error } = await supabase
       .from('cafe_product_modifier_groups')
