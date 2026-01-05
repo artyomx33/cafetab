@@ -41,20 +41,89 @@ export type CategoryUpdate = Partial<CategoryInsert>
 // ============================================
 // PRODUCT TYPES
 // ============================================
+export type PriceType = 'fixed' | 'ask_server' | 'market'
+
 export interface Product {
   id: string
   category_id: string
   name: string
   price: number
   description: string | null
+  notes: string | null
   image_url: string | null
   is_active: boolean
   sort_order: number
+  price_type: PriceType
   created_at: string
 }
 
 export type ProductInsert = Omit<Product, 'id' | 'created_at'>
 export type ProductUpdate = Partial<ProductInsert>
+
+// ============================================
+// MODIFIER TYPES
+// ============================================
+export type ModifierGroupType = 'single' | 'multi'
+
+export interface ModifierGroup {
+  id: string
+  name: string
+  type: ModifierGroupType
+  is_required: boolean
+  min_select: number
+  max_select: number | null
+  sort_order: number
+  created_at: string
+}
+
+export type ModifierGroupInsert = Omit<ModifierGroup, 'id' | 'created_at'>
+export type ModifierGroupUpdate = Partial<ModifierGroupInsert>
+
+export interface Modifier {
+  id: string
+  group_id: string
+  name: string
+  price_adjustment: number
+  is_default: boolean
+  is_active: boolean
+  sort_order: number
+  created_at: string
+}
+
+export type ModifierInsert = Omit<Modifier, 'id' | 'created_at'>
+export type ModifierUpdate = Partial<ModifierInsert>
+
+export interface ProductModifierGroup {
+  id: string
+  product_id: string
+  modifier_group_id: string
+  sort_order: number
+  created_at: string
+}
+
+export type ProductModifierGroupInsert = Omit<ProductModifierGroup, 'id' | 'created_at'>
+
+export interface OrderItemModifier {
+  id: string
+  order_item_id: string
+  modifier_id: string
+  quantity: number
+  price_adjustment: number
+  created_at: string
+}
+
+export type OrderItemModifierInsert = Omit<OrderItemModifier, 'id' | 'created_at'>
+
+export interface TabItemModifier {
+  id: string
+  tab_item_id: string
+  modifier_id: string
+  quantity: number
+  price_adjustment: number
+  created_at: string
+}
+
+export type TabItemModifierInsert = Omit<TabItemModifier, 'id' | 'created_at'>
 
 // ============================================
 // TABLE TYPES (NEW - replaces Groups)
@@ -235,6 +304,47 @@ export interface CategoryWithProducts extends Category {
   products: Product[]
 }
 
+// Modifier group with its options
+export interface ModifierGroupWithModifiers extends ModifierGroup {
+  modifiers: Modifier[]
+}
+
+// Product with all its modifier groups and options
+export interface ProductWithModifiers extends Product {
+  modifier_groups: ModifierGroupWithModifiers[]
+}
+
+// Order item with selected modifiers
+export interface OrderItemWithModifiers extends OrderItem {
+  product: Product
+  modifiers: (OrderItemModifier & { modifier: Modifier })[]
+}
+
+// Tab item with selected modifiers
+export interface TabItemWithModifiers extends TabItem {
+  product: Product
+  modifiers: (TabItemModifier & { modifier: Modifier })[]
+}
+
+// Full order with items and their modifiers
+export interface OrderWithItemsAndModifiers extends Order {
+  order_items: OrderItemWithModifiers[]
+}
+
+// Cart item for client ordering (before submission)
+export interface CartItem {
+  product: Product
+  quantity: number
+  selectedModifiers: SelectedModifier[]
+  notes: string
+  totalPrice: number
+}
+
+export interface SelectedModifier {
+  modifier: Modifier
+  quantity: number
+}
+
 export interface NotificationWithTable extends Notification {
   table: Table
 }
@@ -299,6 +409,31 @@ export interface Database {
         Row: VenueSettings
         Insert: Omit<VenueSettings, 'id' | 'created_at' | 'updated_at'>
         Update: VenueSettingsUpdate
+      }
+      cafe_modifier_groups: {
+        Row: ModifierGroup
+        Insert: ModifierGroupInsert
+        Update: ModifierGroupUpdate
+      }
+      cafe_modifiers: {
+        Row: Modifier
+        Insert: ModifierInsert
+        Update: ModifierUpdate
+      }
+      cafe_product_modifier_groups: {
+        Row: ProductModifierGroup
+        Insert: ProductModifierGroupInsert
+        Update: Partial<ProductModifierGroupInsert>
+      }
+      cafe_order_item_modifiers: {
+        Row: OrderItemModifier
+        Insert: OrderItemModifierInsert
+        Update: Partial<OrderItemModifierInsert>
+      }
+      cafe_tab_item_modifiers: {
+        Row: TabItemModifier
+        Insert: TabItemModifierInsert
+        Update: Partial<TabItemModifierInsert>
       }
     }
   }

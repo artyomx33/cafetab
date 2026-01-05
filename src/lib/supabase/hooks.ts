@@ -18,7 +18,14 @@ import type {
   CategoryWithProducts as CategoryWithProductsType,
   TableWithTab,
   OrderWithItems,
-  NotificationWithTable
+  NotificationWithTable,
+  ModifierGroup,
+  Modifier,
+  ProductModifierGroup,
+  ModifierGroupWithModifiers,
+  ProductWithModifiers,
+  OrderItemModifier,
+  TabItemModifier
 } from '@/types'
 
 // Re-export types from @/types
@@ -977,11 +984,17 @@ export function useClientMenu() {
   return { categories, loading }
 }
 
-// Hook to create order and add items to tab
+// Hook to create order and add items to tab (with modifier support)
 export function useCreateOrder(tabId: string | null) {
   const [loading, setLoading] = useState(false)
 
-  const createOrder = useCallback(async (items: { product_id: string; quantity: number; notes?: string }[]) => {
+  const createOrder = useCallback(async (items: {
+    product_id: string
+    quantity: number
+    notes?: string
+    modifiers?: { modifier_id: string; quantity: number; price_adjustment: number }[]
+    unit_price?: number
+  }[]) => {
     if (!tabId) return null
 
     setLoading(true)
@@ -1002,47 +1015,100 @@ export function useCreateOrder(tabId: string | null) {
       throw new Error('Failed to create order')
     }
 
-    // Add order items
-    const orderItems = items.map(item => ({
-      order_id: order.id,
-      product_id: item.product_id,
-      quantity: item.quantity,
-      notes: item.notes || null
-    }))
+    // Add order items and their modifiers
+    for (const item of items) {
+      // Insert order item
+      const { data: orderItem, error: itemError } = await supabase
+        .from('cafe_order_items')
+        .insert({
+          order_id: order.id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          notes: item.notes || null
+        })
+        .select()
+        .single()
 
-    const { error: itemsError } = await supabase
-      .from('cafe_order_items')
-      .insert(orderItems)
+      if (itemError || !orderItem) {
+        setLoading(false)
+        throw new Error('Failed to add order item')
+      }
 
-    if (itemsError) {
-      setLoading(false)
-      throw new Error('Failed to add order items')
-    }
+      // Add modifiers for this order item if any
+      if (item.modifiers && item.modifiers.length > 0) {
+        const modifierInserts = item.modifiers.map(mod => ({
+          order_item_id: orderItem.id,
+          modifier_id: mod.modifier_id,
+          quantity: mod.quantity,
+          price_adjustment: mod.price_adjustment
+        }))
 
-    // Add to tab items
-    const tabItemsData = await Promise.all(
-      items.map(async (item) => {
-        // Get product price
+        const { error: modError } = await supabase
+          .from('cafe_order_item_modifiers')
+          .insert(modifierInserts)
+
+        if (modError) {
+          setLoading(false)
+          throw new Error('Failed to add order item modifiers')
+        }
+      }
+
+      // Add to tab items with calculated price
+      let unitPrice = item.unit_price
+      if (unitPrice === undefined) {
         const { data: product } = await supabase
           .from('cafe_products')
           .select('price')
           .eq('id', item.product_id)
           .single()
 
-        return {
+        unitPrice = product?.price || 0
+
+        // Add modifier prices to unit price
+        if (item.modifiers) {
+          item.modifiers.forEach(mod => {
+            unitPrice = (unitPrice || 0) + (mod.price_adjustment * mod.quantity)
+          })
+        }
+      }
+
+      const { data: tabItem, error: tabItemError } = await supabase
+        .from('cafe_tab_items')
+        .insert({
           tab_id: tabId,
           product_id: item.product_id,
           seller_id: null,
           order_id: order.id,
           quantity: item.quantity,
-          unit_price: product?.price || 0
-        }
-      })
-    )
+          unit_price: unitPrice
+        })
+        .select()
+        .single()
 
-    await supabase
-      .from('cafe_tab_items')
-      .insert(tabItemsData)
+      if (tabItemError || !tabItem) {
+        setLoading(false)
+        throw new Error('Failed to add tab item')
+      }
+
+      // Add modifiers to tab item if any
+      if (item.modifiers && item.modifiers.length > 0) {
+        const tabModifierInserts = item.modifiers.map(mod => ({
+          tab_item_id: tabItem.id,
+          modifier_id: mod.modifier_id,
+          quantity: mod.quantity,
+          price_adjustment: mod.price_adjustment
+        }))
+
+        const { error: tabModError } = await supabase
+          .from('cafe_tab_item_modifiers')
+          .insert(tabModifierInserts)
+
+        if (tabModError) {
+          setLoading(false)
+          throw new Error('Failed to add tab item modifiers')
+        }
+      }
+    }
 
     setLoading(false)
     return order
@@ -1267,4 +1333,224 @@ export function useNotifications(sellerId?: string) {
   }, [sellerId, refresh])
 
   return { notifications, loading, refresh, markAsRead, markAllAsRead }
+}
+
+// ============================================
+// MODIFIER SYSTEM HOOKS
+// ============================================
+
+// Hook to fetch a product with all its modifier groups and modifiers
+export function useProductWithModifiers(productId: string) {
+  const [product, setProduct] = useState<ProductWithModifiers | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    if (!productId) {
+      setLoading(false)
+      return
+    }
+
+    // Fetch product
+    const { data: productData, error: productError } = await supabase
+      .from('cafe_products')
+      .select('*')
+      .eq('id', productId)
+      .single()
+
+    if (productError || !productData) {
+      setLoading(false)
+      return
+    }
+
+    // Fetch product modifier groups with their details and modifiers
+    const { data: productModifierGroups } = await supabase
+      .from('cafe_product_modifier_groups')
+      .select(`
+        *,
+        cafe_modifier_groups (
+          *,
+          cafe_modifiers (*)
+        )
+      `)
+      .eq('product_id', productId)
+      .order('sort_order')
+
+    // Format the data
+    const modifierGroups: ModifierGroupWithModifiers[] = (productModifierGroups || [])
+      .map((pmg: any) => {
+        const group = pmg.cafe_modifier_groups
+        if (!group) return null
+
+        return {
+          id: group.id,
+          name: group.name,
+          type: group.type,
+          is_required: group.is_required,
+          min_select: group.min_select,
+          max_select: group.max_select,
+          sort_order: group.sort_order,
+          created_at: group.created_at,
+          modifiers: (group.cafe_modifiers || [])
+            .filter((m: Modifier) => m.is_active)
+            .sort((a: Modifier, b: Modifier) => a.sort_order - b.sort_order)
+        }
+      })
+      .filter(Boolean) as ModifierGroupWithModifiers[]
+
+    const productWithModifiers: ProductWithModifiers = {
+      ...productData,
+      modifier_groups: modifierGroups
+    }
+
+    setProduct(productWithModifiers)
+    setLoading(false)
+  }, [productId])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { product, loading, refresh }
+}
+
+// Hook to fetch all modifier groups with their modifiers
+export function useModifierGroups() {
+  const [modifierGroups, setModifierGroups] = useState<ModifierGroupWithModifiers[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    const { data } = await supabase
+      .from('cafe_modifier_groups')
+      .select(`
+        *,
+        cafe_modifiers (*)
+      `)
+      .order('sort_order')
+
+    if (data) {
+      const formatted = data.map((group: any) => ({
+        id: group.id,
+        name: group.name,
+        type: group.type,
+        is_required: group.is_required,
+        min_select: group.min_select,
+        max_select: group.max_select,
+        sort_order: group.sort_order,
+        created_at: group.created_at,
+        modifiers: (group.cafe_modifiers || [])
+          .filter((m: Modifier) => m.is_active)
+          .sort((a: Modifier, b: Modifier) => a.sort_order - b.sort_order)
+      }))
+      setModifierGroups(formatted)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { modifierGroups, loading, refresh }
+}
+
+// Hook to create a new modifier group
+export function useCreateModifierGroup() {
+  const [loading, setLoading] = useState(false)
+
+  const createModifierGroup = useCallback(async (data: {
+    name: string
+    type: 'single' | 'multi'
+    is_required: boolean
+    min_select: number
+    max_select: number | null
+    sort_order?: number
+  }): Promise<ModifierGroup> => {
+    setLoading(true)
+
+    const { data: modifierGroup, error } = await supabase
+      .from('cafe_modifier_groups')
+      .insert({
+        name: data.name,
+        type: data.type,
+        is_required: data.is_required,
+        min_select: data.min_select,
+        max_select: data.max_select,
+        sort_order: data.sort_order ?? 0
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    setLoading(false)
+    return modifierGroup as ModifierGroup
+  }, [])
+
+  return { createModifierGroup, loading }
+}
+
+// Hook to create a new modifier
+export function useCreateModifier() {
+  const [loading, setLoading] = useState(false)
+
+  const createModifier = useCallback(async (data: {
+    group_id: string
+    name: string
+    price_adjustment: number
+    is_default?: boolean
+    is_active?: boolean
+    sort_order?: number
+  }): Promise<Modifier> => {
+    setLoading(true)
+
+    const { data: modifier, error } = await supabase
+      .from('cafe_modifiers')
+      .insert({
+        group_id: data.group_id,
+        name: data.name,
+        price_adjustment: data.price_adjustment,
+        is_default: data.is_default ?? false,
+        is_active: data.is_active ?? true,
+        sort_order: data.sort_order ?? 0
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    setLoading(false)
+    return modifier as Modifier
+  }, [])
+
+  return { createModifier, loading }
+}
+
+// Hook to link a modifier group to a product
+export function useLinkProductModifierGroup() {
+  const [loading, setLoading] = useState(false)
+
+  const linkProductModifierGroup = useCallback(async (data: {
+    product_id: string
+    modifier_group_id: string
+    sort_order?: number
+  }): Promise<ProductModifierGroup> => {
+    setLoading(true)
+
+    const { data: link, error } = await supabase
+      .from('cafe_product_modifier_groups')
+      .insert({
+        product_id: data.product_id,
+        modifier_group_id: data.modifier_group_id,
+        sort_order: data.sort_order ?? 0
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    setLoading(false)
+    return link as ProductModifierGroup
+  }, [])
+
+  return { linkProductModifierGroup, loading }
 }

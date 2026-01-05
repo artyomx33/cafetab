@@ -18,6 +18,11 @@ export interface OrderTicketProps {
     productName: string;
     quantity: number;
     notes?: string | null;
+    modifiers?: Array<{
+      name: string;
+      priceAdjustment: number;
+      quantity: number;
+    }>;
   }>;
   onStart?: () => void;
   onDone?: () => void;
@@ -116,6 +121,17 @@ const OrderTicket = React.forwardRef<HTMLDivElement, OrderTicketProps>(
                       {item.productName}
                     </span>
                   </div>
+                  {item.modifiers && item.modifiers.length > 0 && (
+                    <div className="mt-2 ml-8 space-y-1">
+                      {item.modifiers.map((modifier, modIndex) => (
+                        <div key={modIndex} className="text-sm text-gray-300">
+                          {modifier.priceAdjustment > 0 ? '+' : ''}
+                          {modifier.quantity > 1 ? `${modifier.quantity}x ` : ''}
+                          {modifier.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {item.notes && (
                     <div className="mt-1 text-sm text-yellow-300 italic">
                       Note: {item.notes}

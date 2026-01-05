@@ -21,6 +21,11 @@ interface OrderTicketData {
     quantity: number;
     notes: string | null;
     categoryId?: string;
+    modifiers?: Array<{
+      name: string;
+      priceAdjustment: number;
+      quantity: number;
+    }>;
   }>;
 }
 
@@ -84,6 +89,13 @@ export default function KitchenOrdersPage() {
             cafe_products!inner (
               name,
               category_id
+            ),
+            cafe_order_item_modifiers (
+              quantity,
+              price_adjustment,
+              cafe_modifiers!inner (
+                name
+              )
             )
           )
         `
@@ -109,6 +121,11 @@ export default function KitchenOrdersPage() {
             quantity: item.quantity,
             notes: item.notes,
             categoryId: item.cafe_products.category_id,
+            modifiers: item.cafe_order_item_modifiers?.map((mod: any) => ({
+              name: mod.cafe_modifiers.name,
+              priceAdjustment: mod.price_adjustment,
+              quantity: mod.quantity,
+            })) || [],
           })),
         }));
 

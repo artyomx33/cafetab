@@ -2,15 +2,10 @@
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useTableByQR, useClientMenu, useCreateOrder } from '@/lib/supabase/hooks'
+import { useTableByQR, useClientMenu, useCreateOrder, useProductWithModifiers } from '@/lib/supabase/hooks'
 import { ArrowLeft, ShoppingCart, Plus, Minus, X } from 'lucide-react'
-import type { Product } from '@/types'
-
-interface CartItem {
-  product: Product
-  quantity: number
-  notes?: string
-}
+import { ProductModal } from '@/components/ui/product-modal'
+import type { Product, CartItem, ProductWithModifiers } from '@/types'
 
 export default function MenuBrowser() {
   const params = useParams()
@@ -23,41 +18,51 @@ export default function MenuBrowser() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<CartItem[]>([])
   const [showCart, setShowCart] = useState(false)
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+
+  // Fetch product with modifiers when a product is selected
+  const { product: selectedProduct, loading: productLoading } = useProductWithModifiers(selectedProductId || '')
 
   // Set first category as selected when loaded
   if (!selectedCategory && categories.length > 0) {
     setSelectedCategory(categories[0].id)
   }
 
-  const addToCart = (product: Product) => {
-    const existing = cart.find(item => item.product.id === product.id)
-    if (existing) {
-      setCart(cart.map(item =>
-        item.product.id === product.id
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      ))
-    } else {
-      setCart([...cart, { product, quantity: 1 }])
-    }
+  const handleProductClick = (product: Product) => {
+    setSelectedProductId(product.id)
+    setModalOpen(true)
+  }
+
+  const handleCloseModal = () => {
+    setModalOpen(false)
+    setSelectedProductId(null)
+  }
+
+  const handleAddToCart = (item: CartItem) => {
+    setCart([...cart, item])
     setShowCart(true)
   }
 
-  const updateQuantity = (productId: string, change: number) => {
-    setCart(cart.map(item => {
-      if (item.product.id === productId) {
+  const updateQuantity = (index: number, change: number) => {
+    setCart(cart.map((item, i) => {
+      if (i === index) {
         const newQuantity = item.quantity + change
-        return { ...item, quantity: Math.max(0, newQuantity) }
+        if (newQuantity <= 0) return item
+
+        // Recalculate total price based on new quantity
+        const pricePerUnit = item.totalPrice / item.quantity
+        return { ...item, quantity: newQuantity, totalPrice: pricePerUnit * newQuantity }
       }
       return item
     }).filter(item => item.quantity > 0))
   }
 
-  const removeFromCart = (productId: string) => {
-    setCart(cart.filter(item => item.product.id !== productId))
+  const removeFromCart = (index: number) => {
+    setCart(cart.filter((_, i) => i !== index))
   }
 
-  const cartTotal = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0)
+  const cartTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0)
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
 
   const handleSubmitOrder = async () => {
@@ -71,7 +76,13 @@ export default function MenuBrowser() {
       await createOrder(cart.map(item => ({
         product_id: item.product.id,
         quantity: item.quantity,
-        notes: item.notes
+        notes: item.notes,
+        modifiers: item.selectedModifiers.map(sm => ({
+          modifier_id: sm.modifier.id,
+          quantity: sm.quantity,
+          price_adjustment: sm.modifier.price_adjustment
+        })),
+        unit_price: item.totalPrice / item.quantity
       })))
 
       alert('Order sent to kitchen!')
@@ -147,9 +158,10 @@ export default function MenuBrowser() {
         {selectedCategoryData && selectedCategoryData.products.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {selectedCategoryData.products.map(product => (
-              <div
+              <button
                 key={product.id}
-                className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-shadow"
+                onClick={() => handleProductClick(product)}
+                className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all active:scale-98 text-left w-full"
               >
                 {product.image_url && (
                   <div className="aspect-video bg-gradient-to-br from-[#FFF8E7] to-[#F5EBD7] relative">
@@ -167,18 +179,15 @@ export default function MenuBrowser() {
                   )}
                   <div className="flex items-center justify-between">
                     <span className="text-2xl font-bold text-[#3E2723]">
-                      ${product.price.toFixed(2)}
+                      {product.price_type === 'ask_server' ? 'Ask Server' : `$${product.price.toFixed(2)}`}
                     </span>
-                    <button
-                      onClick={() => addToCart(product)}
-                      className="bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white px-4 py-2 rounded-xl font-semibold hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
-                    >
+                    <div className="bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2">
                       <Plus size={18} />
-                      Add
-                    </button>
+                      View
+                    </div>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         ) : (
@@ -209,38 +218,56 @@ export default function MenuBrowser() {
 
               {/* Cart Items */}
               <div className="space-y-4 mb-6">
-                {cart.map(item => (
-                  <div key={item.product.id} className="flex items-center gap-4 bg-gray-50 rounded-xl p-4">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-[#3E2723]">{item.product.name}</h3>
-                      <p className="text-sm text-gray-600">
-                        ${item.product.price.toFixed(2)} each
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
+                {cart.map((item, index) => (
+                  <div key={index} className="bg-gray-50 rounded-xl p-4">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-[#3E2723]">{item.product.name}</h3>
+                        {item.selectedModifiers.length > 0 && (
+                          <div className="mt-1 space-y-1">
+                            {item.selectedModifiers.map((sm, idx) => (
+                              <p key={idx} className="text-xs text-gray-600">
+                                + {sm.modifier.name}
+                                {sm.quantity > 1 && ` x${sm.quantity}`}
+                                {sm.modifier.price_adjustment !== 0 &&
+                                  ` (+$${(sm.modifier.price_adjustment * sm.quantity).toFixed(2)})`
+                                }
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {item.notes && (
+                          <p className="text-xs text-gray-600 mt-1 italic">Note: {item.notes}</p>
+                        )}
+                        <p className="text-sm text-gray-600 mt-2">
+                          ${(item.totalPrice / item.quantity).toFixed(2)} each
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => updateQuantity(index, -1)}
+                          className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-100"
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <span className="font-bold text-lg w-8 text-center">{item.quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(index, 1)}
+                          className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-100"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                      <div className="font-bold text-[#3E2723] w-20 text-right">
+                        ${item.totalPrice.toFixed(2)}
+                      </div>
                       <button
-                        onClick={() => updateQuantity(item.product.id, -1)}
-                        className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-100"
+                        onClick={() => removeFromCart(index)}
+                        className="p-2 hover:bg-red-50 rounded-lg transition-colors text-red-500"
                       >
-                        <Minus size={16} />
-                      </button>
-                      <span className="font-bold text-lg w-8 text-center">{item.quantity}</span>
-                      <button
-                        onClick={() => updateQuantity(item.product.id, 1)}
-                        className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-100"
-                      >
-                        <Plus size={16} />
+                        <X size={20} />
                       </button>
                     </div>
-                    <div className="font-bold text-[#3E2723] w-20 text-right">
-                      ${(item.product.price * item.quantity).toFixed(2)}
-                    </div>
-                    <button
-                      onClick={() => removeFromCart(item.product.id)}
-                      className="p-2 hover:bg-red-50 rounded-lg transition-colors text-red-500"
-                    >
-                      <X size={20} />
-                    </button>
                   </div>
                 ))}
               </div>
@@ -296,6 +323,16 @@ export default function MenuBrowser() {
             <div className="font-bold">${cartTotal.toFixed(2)}</div>
           </div>
         </button>
+      )}
+
+      {/* Product Modal */}
+      {selectedProduct && !productLoading && (
+        <ProductModal
+          product={selectedProduct}
+          isOpen={modalOpen}
+          onClose={handleCloseModal}
+          onAddToCart={handleAddToCart}
+        />
       )}
     </div>
   )

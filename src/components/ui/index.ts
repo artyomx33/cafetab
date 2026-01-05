@@ -39,3 +39,6 @@ export { IconBox } from "./icon-box";
 export { ActionCard } from "./action-card";
 
 export { StatCard } from "./stat-card";
+
+export { ProductModal } from "./product-modal";
+export type { ProductModalProps } from "./product-modal";
