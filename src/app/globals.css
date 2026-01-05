@@ -1,0 +1,623 @@
+@import "tailwindcss";
+
+/* ============================================
+   GOLFTAB PREMIUM THEME - TeddySnaps Inspired
+   ============================================ */
+
+:root {
+  /* Background & Foreground */
+  --background: #0D0D0F;
+  --foreground: #FFFFFF;
+
+  /* Primary (Gold) */
+  --primary: #C9A962;
+  --primary-foreground: #0D0D0F;
+
+  /* Secondary (Teal) */
+  --secondary: #4ECDC4;
+  --secondary-foreground: #0D0D0F;
+
+  /* Accent (Gold) */
+  --accent: #C9A962;
+  --accent-foreground: #0D0D0F;
+
+  /* Cards */
+  --card: rgba(39, 39, 42, 0.6);
+  --card-foreground: #FFFFFF;
+  --card-border: rgba(63, 63, 68, 0.5);
+
+  /* Muted */
+  --muted: #18181B;
+  --muted-foreground: #A1A1AA;
+
+  /* Input */
+  --input-bg: #18181B;
+  --input-border: #3F3F46;
+
+  /* Sidebar */
+  --sidebar: rgba(24, 24, 27, 0.8);
+  --sidebar-foreground: #FFFFFF;
+  --sidebar-border: rgba(63, 63, 68, 0.5);
+  --sidebar-hover: rgba(39, 39, 42, 0.5);
+
+  /* Charcoal Palette */
+  --charcoal-950: #0D0D0F;
+  --charcoal-900: #18181B;
+  --charcoal-800: #27272A;
+  --charcoal-700: #3F3F46;
+  --charcoal-600: #52525B;
+  --charcoal-500: #71717A;
+
+  /* Gold Palette */
+  --gold-50: #FDF8E7;
+  --gold-100: #F9ECC4;
+  --gold-200: #F0D88A;
+  --gold-300: #E5C14F;
+  --gold-400: #D4A82E;
+  --gold-500: #C9A962;
+  --gold-600: #A88B3D;
+
+  /* Teal Palette */
+  --teal-300: #7EDFDA;
+  --teal-400: #5ED4CB;
+  --teal-500: #4ECDC4;
+  --teal-600: #2FB3AA;
+
+  /* Purple Palette */
+  --purple-400: #A78BFA;
+  --purple-500: #8B5CF6;
+  --purple-600: #7C3AED;
+
+  /* Success/Error/Warning */
+  --success: #22C55E;
+  --error: #EF4444;
+  --warning: #F59E0B;
+
+  /* Border */
+  --border: rgba(63, 63, 68, 0.5);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-playfair);
+}
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Serif headings */
+h1, h2, h3, .font-serif {
+  font-family: var(--font-playfair), 'Playfair Display', Georgia, serif;
+}
+
+/* ============================================
+   GLASS MORPHISM
+   ============================================ */
+
+.glass {
+  background-color: rgba(39, 39, 42, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(63, 63, 68, 0.5);
+}
+
+.glass-subtle {
+  background-color: rgba(39, 39, 42, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(63, 63, 68, 0.3);
+}
+
+.glass-strong {
+  background-color: rgba(39, 39, 42, 0.7);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(63, 63, 68, 0.6);
+}
+
+/* ============================================
+   GLOW EFFECTS
+   ============================================ */
+
+.glow-gold {
+  box-shadow: 0 0 40px rgba(201, 169, 98, 0.15);
+}
+
+.glow-gold-strong {
+  box-shadow: 0 0 60px rgba(201, 169, 98, 0.25);
+}
+
+.glow-gold-subtle {
+  box-shadow: 0 0 20px rgba(201, 169, 98, 0.1);
+}
+
+.glow-teal {
+  box-shadow: 0 0 40px rgba(78, 205, 196, 0.15);
+}
+
+.glow-purple {
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.15);
+}
+
+.glow-border-gold {
+  box-shadow: 0 0 0 1px rgba(201, 169, 98, 0.3), 0 0 20px rgba(201, 169, 98, 0.1);
+}
+
+/* Hover glow animation */
+.hover-glow {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 30px rgba(201, 169, 98, 0.2);
+  border-color: rgba(201, 169, 98, 0.5);
+}
+
+/* Shadow for elevated elements */
+.shadow-glow {
+  box-shadow: 0 0 20px rgba(201, 169, 98, 0.2);
+}
+
+/* ============================================
+   GRADIENT TEXT
+   ============================================ */
+
+.text-gradient-gold {
+  background: linear-gradient(135deg, #D4A82E 0%, #C9A962 50%, #E5C14F 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-teal {
+  background: linear-gradient(135deg, #5ED4CB 0%, #4ECDC4 50%, #2FB3AA 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-purple {
+  background: linear-gradient(135deg, #A78BFA 0%, #8B5CF6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ============================================
+   ICON BOX BACKGROUNDS
+   ============================================ */
+
+.icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+}
+
+.icon-box-gold {
+  background: rgba(201, 169, 98, 0.2);
+  color: var(--gold-400);
+}
+
+.icon-box-teal {
+  background: rgba(78, 205, 196, 0.2);
+  color: var(--teal-400);
+}
+
+.icon-box-purple {
+  background: rgba(139, 92, 246, 0.2);
+  color: var(--purple-400);
+}
+
+.icon-box-green {
+  background: rgba(34, 197, 94, 0.2);
+  color: #22C55E;
+}
+
+/* Icon box sizes */
+.icon-box-sm {
+  width: 2rem;
+  height: 2rem;
+}
+
+.icon-box-md {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.icon-box-lg {
+  width: 3rem;
+  height: 3rem;
+}
+
+.icon-box-xl {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+/* ============================================
+   BACKGROUND EFFECTS
+   ============================================ */
+
+.bg-glow-gold {
+  background: radial-gradient(ellipse at center, rgba(201, 169, 98, 0.15) 0%, transparent 70%);
+}
+
+.bg-glow-teal {
+  background: radial-gradient(ellipse at center, rgba(78, 205, 196, 0.15) 0%, transparent 70%);
+}
+
+/* Floating glow blobs */
+.glow-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.glow-blob-gold {
+  background: rgba(201, 169, 98, 0.4);
+}
+
+.glow-blob-teal {
+  background: rgba(78, 205, 196, 0.3);
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(201, 169, 98, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(201, 169, 98, 0.4);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s ease-out forwards;
+}
+
+.animate-slide-in-up {
+  animation: slide-in-up 0.4s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease-out forwards;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--charcoal-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--charcoal-700);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--charcoal-600);
+}
+
+/* ============================================
+   CARD VARIANTS
+   ============================================ */
+
+.card-default {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+}
+
+.card-glass {
+  background: rgba(39, 39, 42, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(63, 63, 68, 0.5);
+  border-radius: 0.75rem;
+}
+
+.card-glow {
+  background: var(--charcoal-900);
+  border: 1px solid var(--charcoal-800);
+  border-radius: 0.75rem;
+  box-shadow: 0 0 40px rgba(201, 169, 98, 0.1);
+}
+
+.card-interactive {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 30px rgba(201, 169, 98, 0.15);
+  border-color: rgba(201, 169, 98, 0.3);
+}
+
+/* ============================================
+   INPUT STYLING
+   ============================================ */
+
+.input-themed {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--foreground);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-themed:focus {
+  outline: none;
+  border-color: var(--gold-500);
+  box-shadow: 0 0 0 3px rgba(201, 169, 98, 0.2);
+}
+
+.input-themed::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* ============================================
+   BUTTON STYLES
+   ============================================ */
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 0 20px rgba(201, 169, 98, 0.3);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-secondary {
+  background: var(--charcoal-800);
+  color: var(--foreground);
+  border: 1px solid var(--charcoal-700);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-secondary:hover {
+  background: var(--charcoal-700);
+  border-color: var(--charcoal-600);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted-foreground);
+  transition: color 0.2s, background 0.2s;
+}
+
+.btn-ghost:hover {
+  color: var(--foreground);
+  background: var(--charcoal-800);
+}
+
+/* ============================================
+   BADGE STYLES (Transparent)
+   ============================================ */
+
+.badge-gold {
+  background: rgba(201, 169, 98, 0.2);
+  color: var(--gold-400);
+  border: 1px solid rgba(201, 169, 98, 0.3);
+}
+
+.badge-teal {
+  background: rgba(78, 205, 196, 0.2);
+  color: var(--teal-400);
+  border: 1px solid rgba(78, 205, 196, 0.3);
+}
+
+.badge-purple {
+  background: rgba(139, 92, 246, 0.2);
+  color: var(--purple-400);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.badge-success {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ADE80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.badge-error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #F87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: #FBBF24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-muted {
+  background: rgba(113, 113, 122, 0.2);
+  color: var(--charcoal-500);
+  border: 1px solid rgba(113, 113, 122, 0.3);
+}
+
+/* ============================================
+   SIDEBAR STYLES
+   ============================================ */
+
+.sidebar {
+  background: var(--sidebar);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid var(--sidebar-border);
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  color: var(--muted-foreground);
+}
+
+.sidebar-nav-item:hover {
+  color: var(--foreground);
+  background: var(--sidebar-hover);
+}
+
+.sidebar-nav-item-active {
+  color: var(--gold-400);
+  background: rgba(201, 169, 98, 0.1);
+  border: 1px solid rgba(201, 169, 98, 0.2);
+}
+
+/* ============================================
+   LEADERBOARD STYLES
+   ============================================ */
+
+.leaderboard-rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.leaderboard-rank-1 {
+  background: linear-gradient(135deg, #D4A82E 0%, #C9A962 100%);
+  color: #0D0D0F;
+  box-shadow: 0 0 20px rgba(201, 169, 98, 0.4);
+}
+
+.leaderboard-rank-2 {
+  background: linear-gradient(135deg, #9CA3AF 0%, #D1D5DB 100%);
+  color: #0D0D0F;
+}
+
+.leaderboard-rank-3 {
+  background: linear-gradient(135deg, #CD7F32 0%, #E6A852 100%);
+  color: #0D0D0F;
+}
+
+.leaderboard-rank-default {
+  background: var(--charcoal-800);
+  color: var(--muted-foreground);
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Text colors */
+.text-gold { color: var(--gold-500); }
+.text-gold-400 { color: var(--gold-400); }
+.text-teal { color: var(--teal-500); }
+.text-teal-400 { color: var(--teal-400); }
+.text-purple { color: var(--purple-500); }
+.text-purple-400 { color: var(--purple-400); }
+
+/* Background colors */
+.bg-charcoal-950 { background: var(--charcoal-950); }
+.bg-charcoal-900 { background: var(--charcoal-900); }
+.bg-charcoal-800 { background: var(--charcoal-800); }
+.bg-charcoal-700 { background: var(--charcoal-700); }
+
+/* Border colors */
+.border-gold { border-color: var(--gold-500); }
+.border-gold-500\/30 { border-color: rgba(201, 169, 98, 0.3); }
+.border-gold-500\/50 { border-color: rgba(201, 169, 98, 0.5); }
+.border-teal { border-color: var(--teal-500); }
+.border-charcoal-700 { border-color: var(--charcoal-700); }
+.border-charcoal-800 { border-color: var(--charcoal-800); }
+
+/* Divider */
+.divider {
+  border-color: var(--charcoal-800);
+}
