@@ -77,7 +77,7 @@ export default function AdminDashboard() {
         <ActionCard
           href="/admin/settings"
           icon={<Settings className="w-6 h-6" />}
-          color="muted"
+          color="gold"
           title="Settings"
           subtitle="Venue configuration"
         />
@@ -110,7 +110,7 @@ export default function AdminDashboard() {
           label="Open Tabs"
           value={stats.openTabs}
           icon={<ShoppingCart className="w-6 h-6" />}
-          iconColor="muted"
+          iconColor="gold"
           delay={0.5}
         />
       </div>

@@ -2,7 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
-  Group,
+  Table,
   Product,
   ProductInsert,
   ProductUpdate,
@@ -17,7 +17,7 @@ import {
 
 export interface DashboardStats {
   totalSalesToday: number
-  activeGroupsCount: number
+  activeTablesCount: number
   itemsSoldToday: number
 }
 
@@ -47,22 +47,22 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   // Get total sales today (sum of paid tabs)
   const { data: paidTabs } = await supabase
-    .from('tabs')
+    .from('cafe_tabs')
     .select('total')
     .eq('status', 'paid')
-    .gte('updated_at', todayISO)
+    .gte('paid_at', todayISO)
 
   const totalSalesToday = paidTabs?.reduce((sum, tab) => sum + (tab.total || 0), 0) || 0
 
-  // Get active groups count
-  const { count: activeGroupsCount } = await supabase
-    .from('groups')
+  // Get occupied tables count
+  const { count: activeTablesCount } = await supabase
+    .from('cafe_tables')
     .select('*', { count: 'exact', head: true })
-    .eq('status', 'active')
+    .eq('status', 'occupied')
 
   // Get items sold today
   const { data: itemsToday } = await supabase
-    .from('tab_items')
+    .from('cafe_tab_items')
     .select('quantity')
     .gte('created_at', todayISO)
 
@@ -70,7 +70,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   return {
     totalSalesToday,
-    activeGroupsCount: activeGroupsCount || 0,
+    activeTablesCount: activeTablesCount || 0,
     itemsSoldToday
   }
 }
@@ -80,27 +80,20 @@ export async function getSellerLeaderboard(): Promise<SellerStats[]> {
   const supabase = createAdminClient()
 
   const { data: sellers } = await supabase
-    .from('sellers')
-    .select(`
-      id,
-      name,
-      tabs (
-        total,
-        status,
-        tab_items (
-          quantity
-        )
-      )
-    `)
+    .from('cafe_sellers')
+    .select('id, name')
 
   if (!sellers) return []
 
-  return sellers.map(seller => {
-    const paidTabs = (seller.tabs as any[])?.filter(tab => tab.status === 'paid') || []
-    const totalSales = paidTabs.reduce((sum, tab) => sum + (tab.total || 0), 0)
+  // Get tab items for each seller
+  const results = await Promise.all(sellers.map(async (seller) => {
+    const { data: tabItems } = await supabase
+      .from('cafe_tab_items')
+      .select('quantity, unit_price')
+      .eq('seller_id', seller.id)
 
-    const allItems = (seller.tabs as any[])?.flatMap(tab => tab.tab_items || []) || []
-    const itemsSold = allItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
+    const totalSales = tabItems?.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0) || 0
+    const itemsSold = tabItems?.reduce((sum, item) => sum + item.quantity, 0) || 0
 
     return {
       id: seller.id,
@@ -108,7 +101,9 @@ export async function getSellerLeaderboard(): Promise<SellerStats[]> {
       totalSales,
       itemsSold
     }
-  }).sort((a, b) => b.totalSales - a.totalSales)
+  }))
+
+  return results.sort((a, b) => b.totalSales - a.totalSales)
 }
 
 // Recent Activity
@@ -116,16 +111,16 @@ export async function getRecentActivity(): Promise<RecentActivity[]> {
   const supabase = createAdminClient()
 
   const { data } = await supabase
-    .from('tab_items')
+    .from('cafe_tab_items')
     .select(`
       id,
       quantity,
       unit_price,
       created_at,
-      product:products (
+      product:cafe_products (
         name
       ),
-      seller:sellers (
+      seller:cafe_sellers (
         name
       )
     `)
@@ -144,12 +139,12 @@ export async function getRecentActivity(): Promise<RecentActivity[]> {
   }))
 }
 
-// Groups
-export async function getAllGroups(): Promise<Group[]> {
+// Tables
+export async function getAllTables(): Promise<Table[]> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('groups')
+    .from('cafe_tables')
     .select('*')
     .order('created_at', { ascending: false })
 
@@ -157,16 +152,15 @@ export async function getAllGroups(): Promise<Group[]> {
   return data || []
 }
 
-export async function createGroup(name: string, clientCode: string, createdBy: string | null): Promise<Group> {
+export async function createTable(number: string, section: string | null): Promise<Table> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('groups')
+    .from('cafe_tables')
     .insert({
-      name,
-      client_code: clientCode,
-      status: 'active',
-      created_by: createdBy
+      number,
+      section,
+      status: 'available'
     })
     .select()
     .single()
@@ -175,11 +169,11 @@ export async function createGroup(name: string, clientCode: string, createdBy: s
   return data
 }
 
-export async function updateGroup(id: string, updates: { name?: string; client_code?: string; status?: 'active' | 'closed' }): Promise<Group> {
+export async function updateTable(id: string, updates: { number?: string; section?: string; status?: 'available' | 'occupied' | 'reserved' }): Promise<Table> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('groups')
+    .from('cafe_tables')
     .update(updates)
     .eq('id', id)
     .select()
@@ -194,7 +188,7 @@ export async function getAllProducts(): Promise<Product[]> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('products')
+    .from('cafe_products')
     .select('*')
     .order('sort_order', { ascending: true })
 
@@ -206,7 +200,7 @@ export async function createProduct(product: ProductInsert): Promise<Product> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('products')
+    .from('cafe_products')
     .insert(product)
     .select()
     .single()
@@ -219,7 +213,7 @@ export async function updateProduct(id: string, updates: ProductUpdate): Promise
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('products')
+    .from('cafe_products')
     .update(updates)
     .eq('id', id)
     .select()
@@ -233,7 +227,7 @@ export async function deleteProduct(id: string): Promise<void> {
   const supabase = createAdminClient()
 
   const { error } = await supabase
-    .from('products')
+    .from('cafe_products')
     .delete()
     .eq('id', id)
 
@@ -245,7 +239,7 @@ export async function getAllCategories(): Promise<Category[]> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('categories')
+    .from('cafe_categories')
     .select('*')
     .order('sort_order', { ascending: true })
 
@@ -257,7 +251,7 @@ export async function createCategory(category: CategoryInsert): Promise<Category
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('categories')
+    .from('cafe_categories')
     .insert(category)
     .select()
     .single()
@@ -270,7 +264,7 @@ export async function updateCategory(id: string, updates: Partial<CategoryInsert
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('categories')
+    .from('cafe_categories')
     .update(updates)
     .eq('id', id)
     .select()
@@ -284,7 +278,7 @@ export async function deleteCategory(id: string): Promise<void> {
   const supabase = createAdminClient()
 
   const { error } = await supabase
-    .from('categories')
+    .from('cafe_categories')
     .delete()
     .eq('id', id)
 
@@ -296,7 +290,7 @@ export async function getAllSellers(): Promise<Seller[]> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('sellers')
+    .from('cafe_sellers')
     .select('*')
     .order('created_at', { ascending: false })
 
@@ -308,7 +302,7 @@ export async function createSeller(seller: SellerInsert): Promise<Seller> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('sellers')
+    .from('cafe_sellers')
     .insert(seller)
     .select()
     .single()
@@ -321,7 +315,7 @@ export async function updateSeller(id: string, updates: SellerUpdate): Promise<S
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
-    .from('sellers')
+    .from('cafe_sellers')
     .update(updates)
     .eq('id', id)
     .select()
@@ -335,18 +329,8 @@ export async function getSellerStats(sellerId: string): Promise<SellerStats> {
   const supabase = createAdminClient()
 
   const { data: seller } = await supabase
-    .from('sellers')
-    .select(`
-      id,
-      name,
-      tabs (
-        total,
-        status,
-        tab_items (
-          quantity
-        )
-      )
-    `)
+    .from('cafe_sellers')
+    .select('id, name')
     .eq('id', sellerId)
     .single()
 
@@ -359,11 +343,13 @@ export async function getSellerStats(sellerId: string): Promise<SellerStats> {
     }
   }
 
-  const paidTabs = (seller.tabs as any[])?.filter(tab => tab.status === 'paid') || []
-  const totalSales = paidTabs.reduce((sum, tab) => sum + (tab.total || 0), 0)
+  const { data: tabItems } = await supabase
+    .from('cafe_tab_items')
+    .select('quantity, unit_price')
+    .eq('seller_id', sellerId)
 
-  const allItems = (seller.tabs as any[])?.flatMap(tab => tab.tab_items || []) || []
-  const itemsSold = allItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
+  const totalSales = tabItems?.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0) || 0
+  const itemsSold = tabItems?.reduce((sum, item) => sum + item.quantity, 0) || 0
 
   return {
     id: seller.id,

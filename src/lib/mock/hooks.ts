@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { mockDb, verifyMockPin, resetMockStore } from './data'
-import type { Seller, Group, Tab, TabItem, Product, Category } from '@/types'
+import { getMockStore, saveMockStore, generateId, resetMockStore } from './data'
+import type { Seller, Tab, TabItem, Product, Category, Table } from '@/types'
 
 // Types
 export interface TabWithItems extends Tab {
@@ -13,9 +13,15 @@ export interface CategoryWithProducts extends Category {
   products: Product[]
 }
 
-export interface GroupWithTab extends Group {
+export interface TableWithTab extends Table {
   tab?: Tab
   itemCount: number
+}
+
+// Verify PIN
+function verifyMockPin(pin: string): Seller | null {
+  const store = getMockStore()
+  return store.sellers.find(s => s.pin_hash === pin && s.is_active) || null
 }
 
 // Seller hooks
@@ -42,14 +48,19 @@ export function useVerifyPin() {
   return { verify, loading, error }
 }
 
-// Groups hooks
-export function useActiveGroups() {
-  const [groups, setGroups] = useState<GroupWithTab[]>([])
+// Tables hooks
+export function useActiveTables() {
+  const [tables, setTables] = useState<TableWithTab[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(() => {
-    const data = mockDb.getActiveGroups()
-    setGroups(data)
+    const store = getMockStore()
+    const tablesWithTabs = store.tables.map(table => {
+      const tab = store.tabs.find(t => t.table_id === table.id && t.status === 'open')
+      const itemCount = tab ? store.tabItems.filter(ti => ti.tab_id === tab.id).length : 0
+      return { ...table, tab, itemCount }
+    })
+    setTables(tablesWithTabs)
     setLoading(false)
   }, [])
 
@@ -57,58 +68,136 @@ export function useActiveGroups() {
     refresh()
   }, [refresh])
 
-  return { groups, loading, refresh }
+  return { tables, loading, refresh }
 }
 
-export function useCreateGroup() {
+export function useCreateTab() {
   const [loading, setLoading] = useState(false)
 
-  const create = useCallback(async (name: string, sellerId?: string): Promise<Group> => {
+  const create = useCallback(async (
+    tableId: string,
+    sellerId?: string,
+    type: 'regular' | 'prepaid' = 'regular',
+    prepaidAmount: number = 0
+  ): Promise<Tab> => {
     setLoading(true)
     await new Promise(r => setTimeout(r, 200))
-    const group = mockDb.createGroup(name, sellerId)
+
+    const store = getMockStore()
+    const now = new Date().toISOString()
+
+    const tab: Tab = {
+      id: generateId(),
+      table_id: tableId,
+      type,
+      status: 'open',
+      total: 0,
+      prepaid_amount: type === 'prepaid' ? prepaidAmount : 0,
+      balance: type === 'prepaid' ? prepaidAmount : 0,
+      tip: 0,
+      paid_at: null,
+      created_by: sellerId || null,
+      created_at: now,
+    }
+
+    store.tabs.push(tab)
+
+    // Update table to occupied
+    const tableIdx = store.tables.findIndex(t => t.id === tableId)
+    if (tableIdx !== -1) {
+      store.tables[tableIdx].status = 'occupied'
+      store.tables[tableIdx].current_tab_id = tab.id
+    }
+
+    saveMockStore(store)
     setLoading(false)
-    return group
+    return tab
   }, [])
 
   return { create, loading }
 }
 
-export function useGroupByCode(code: string) {
-  const [group, setGroup] = useState<Group | null>(null)
+export function useTableByQRCode(qrCode: string) {
+  const [table, setTable] = useState<Table | null>(null)
   const [tab, setTab] = useState<TabWithItems | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!code || code.length !== 6) {
+    if (!qrCode) {
       setLoading(false)
       return
     }
 
-    const g = mockDb.getGroupByCode(code)
-    if (g) {
-      setGroup(g)
-      const t = mockDb.getTabByGroupId(g.id)
-      setTab(t)
+    const store = getMockStore()
+    const t = store.tables.find(tbl => tbl.qr_code === qrCode)
+
+    if (t) {
+      setTable(t)
+
+      if (t.current_tab_id) {
+        const tabData = store.tabs.find(tb => tb.id === t.current_tab_id)
+        if (tabData) {
+          const items = store.tabItems.filter(ti => ti.tab_id === tabData.id)
+          setTab({
+            ...tabData,
+            tab_items: items.map(item => ({
+              ...item,
+              product: store.products.find(p => p.id === item.product_id)
+            }))
+          })
+        }
+      }
       setError(null)
     } else {
-      setError('Group not found')
+      setError('Table not found')
     }
     setLoading(false)
-  }, [code])
+  }, [qrCode])
 
-  return { group, tab, loading, error }
+  return { table, tab, loading, error }
 }
 
-// Categories & Products hooks
+// Products hooks
+export function useProducts() {
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const store = getMockStore()
+    setProducts(store.products.filter(p => p.is_active))
+    setLoading(false)
+  }, [])
+
+  return { products, loading }
+}
+
 export function useCategories() {
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const store = getMockStore()
+    setCategories(store.categories.filter(c => c.is_visible))
+    setLoading(false)
+  }, [])
+
+  return { categories, loading }
+}
+
+export function useCategoriesWithProducts() {
   const [categories, setCategories] = useState<CategoryWithProducts[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const data = mockDb.getCategories()
-    setCategories(data)
+    const store = getMockStore()
+    const cats = store.categories
+      .filter(c => c.is_visible)
+      .map(cat => ({
+        ...cat,
+        products: store.products.filter(p => p.category_id === cat.id && p.is_active)
+      }))
+    setCategories(cats)
     setLoading(false)
   }, [])
 
@@ -116,176 +205,92 @@ export function useCategories() {
 }
 
 // Tab hooks
-export function useTab(groupId: string) {
+export function useTab(tabId: string) {
   const [tab, setTab] = useState<TabWithItems | null>(null)
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(() => {
-    const data = mockDb.getTabByGroupId(groupId)
-    setTab(data)
+    if (!tabId) return
+
+    const store = getMockStore()
+    const t = store.tabs.find(tb => tb.id === tabId)
+
+    if (t) {
+      const items = store.tabItems.filter(ti => ti.tab_id === tabId)
+      setTab({
+        ...t,
+        tab_items: items.map(item => ({
+          ...item,
+          product: store.products.find(p => p.id === item.product_id)
+        }))
+      })
+    }
     setLoading(false)
-  }, [groupId])
+  }, [tabId])
 
   useEffect(() => {
     refresh()
   }, [refresh])
 
-  const addItem = useCallback(async (productId: string, quantity: number, sellerId: string) => {
-    if (!tab) return null
-    await new Promise(r => setTimeout(r, 100))
-    const item = mockDb.addItemToTab(tab.id, productId, quantity, sellerId)
+  const addItem = useCallback(async (productId: string, quantity: number, sellerId?: string) => {
+    const store = getMockStore()
+    const product = store.products.find(p => p.id === productId)
+    if (!product) return
+
+    const now = new Date().toISOString()
+    const item: TabItem = {
+      id: generateId(),
+      tab_id: tabId,
+      product_id: productId,
+      seller_id: sellerId || null,
+      order_id: null,
+      quantity,
+      unit_price: product.price,
+      created_at: now,
+    }
+
+    store.tabItems.push(item)
+
+    // Update tab total
+    const tabIdx = store.tabs.findIndex(t => t.id === tabId)
+    if (tabIdx !== -1) {
+      const total = store.tabItems
+        .filter(ti => ti.tab_id === tabId)
+        .reduce((sum, ti) => sum + ti.quantity * ti.unit_price, 0)
+      store.tabs[tabIdx].total = total
+    }
+
+    saveMockStore(store)
     refresh()
-    return item
-  }, [tab, refresh])
+  }, [tabId, refresh])
 
-  const removeItem = useCallback(async (itemId: string) => {
-    await new Promise(r => setTimeout(r, 100))
-    mockDb.removeItemFromTab(itemId)
-    refresh()
-  }, [refresh])
+  const closeTab = useCallback(async () => {
+    const store = getMockStore()
+    const tabIdx = store.tabs.findIndex(t => t.id === tabId)
 
-  const markPaid = useCallback(async () => {
-    if (!tab) return false
-    await new Promise(r => setTimeout(r, 200))
-    const success = mockDb.markTabPaid(tab.id)
-    refresh()
-    return success
-  }, [tab, refresh])
+    if (tabIdx !== -1) {
+      store.tabs[tabIdx].status = 'paid'
+      store.tabs[tabIdx].paid_at = new Date().toISOString()
 
-  return { tab, loading, refresh, addItem, removeItem, markPaid }
-}
-
-// Admin hooks
-export function useDashboardStats() {
-  const [stats, setStats] = useState({ totalSales: 0, activeGroups: 0, itemsSold: 0 })
-  const [leaderboard, setLeaderboard] = useState<{ id: string; name: string; itemsSold: number; totalSales: number }[]>([])
-  const [activity, setActivity] = useState<{ id: string; productName: string; quantity: number; total: number; sellerName: string; groupName: string; createdAt: string }[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(() => {
-    setStats(mockDb.getDashboardStats())
-    setLeaderboard(mockDb.getSellerLeaderboard())
-    setActivity(mockDb.getRecentActivity())
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  return { stats, leaderboard, activity, loading, refresh }
-}
-
-export function useAllGroups() {
-  const [groups, setGroups] = useState<(Group & { total: number })[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(() => {
-    setGroups(mockDb.getAllGroups())
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  return { groups, loading, refresh }
-}
-
-export function useAllProducts() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(() => {
-    setProducts(mockDb.getAllProducts())
-    setCategories(mockDb.getAllCategories())
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const createProduct = useCallback(async (data: { name: string; price: number; category_id: string }) => {
-    await new Promise(r => setTimeout(r, 150))
-    const product = mockDb.createProduct(data)
-    refresh()
-    return product
-  }, [refresh])
-
-  const updateProduct = useCallback(async (id: string, data: Partial<Product>) => {
-    await new Promise(r => setTimeout(r, 150))
-    const product = mockDb.updateProduct(id, data)
-    refresh()
-    return product
-  }, [refresh])
-
-  const deleteProduct = useCallback(async (id: string) => {
-    await new Promise(r => setTimeout(r, 150))
-    mockDb.deleteProduct(id)
-    refresh()
-  }, [refresh])
-
-  const createCategory = useCallback(async (name: string) => {
-    await new Promise(r => setTimeout(r, 150))
-    const category = mockDb.createCategory(name)
-    refresh()
-    return category
-  }, [refresh])
-
-  return { products, categories, loading, refresh, createProduct, updateProduct, deleteProduct, createCategory }
-}
-
-export function useAllSellers() {
-  const [sellers, setSellers] = useState<(Seller & { totalSales: number; itemsSold: number })[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(() => {
-    const allSellers = mockDb.getAllSellers()
-    const leaderboard = mockDb.getSellerLeaderboard()
-
-    // Merge sellers with their stats from leaderboard
-    const sellersWithStats = allSellers.map(seller => {
-      const stats = leaderboard.find(l => l.id === seller.id)
-      return {
-        ...seller,
-        totalSales: stats?.totalSales || 0,
-        itemsSold: stats?.itemsSold || 0,
+      // Update table to available
+      const tableIdx = store.tables.findIndex(t => t.current_tab_id === tabId)
+      if (tableIdx !== -1) {
+        store.tables[tableIdx].status = 'available'
+        store.tables[tableIdx].current_tab_id = null
       }
-    })
 
-    setSellers(sellersWithStats)
-    setLoading(false)
-  }, [])
+      saveMockStore(store)
+      refresh()
+    }
+  }, [tabId, refresh])
 
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const createSeller = useCallback(async (name: string, pin: string) => {
-    await new Promise(r => setTimeout(r, 150))
-    const seller = mockDb.createSeller(name, pin)
-    refresh()
-    return seller
-  }, [refresh])
-
-  const updateSeller = useCallback(async (id: string, data: Partial<Seller>) => {
-    await new Promise(r => setTimeout(r, 150))
-    const seller = mockDb.updateSeller(id, data)
-    refresh()
-    return seller
-  }, [refresh])
-
-  return { sellers, loading, refresh, createSeller, updateSeller }
+  return { tab, loading, refresh, addItem, closeTab }
 }
 
-// Reset hook for demo
-export function useResetDemo() {
-  const reset = useCallback(() => {
+// Reset hook
+export function useResetMockData() {
+  return useCallback(() => {
     resetMockStore()
     window.location.reload()
   }, [])
-
-  return { reset }
 }

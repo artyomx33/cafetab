@@ -101,7 +101,7 @@ export const Glow = memo(function Glow({
     return <>{children}</>;
   }
 
-  const colors = GLOW_COLORS[variant];
+  const colors = GLOW_COLORS[variant] || GLOW_COLORS.gold;
 
   return (
     <div

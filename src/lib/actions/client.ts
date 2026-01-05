@@ -1,70 +1,63 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { Group, TabWithItems } from '@/types'
+import { Table, TabWithItems } from '@/types'
 
-export async function getGroupByClientCode(
-  code: string
+export async function getTableByQRCode(
+  qrCode: string
 ): Promise<
-  | { ok: true; group: Group; tab: TabWithItems }
+  | { ok: true; table: Table; tab: TabWithItems | null }
   | { ok: false; message: string }
 > {
   try {
     const supabase = await createClient()
 
-    // Fetch group by client_code
-    const { data: group, error: groupError } = await supabase
-      .from('groups')
+    // Fetch table by qr_code
+    const { data: table, error: tableError } = await supabase
+      .from('cafe_tables')
       .select('*')
-      .eq('client_code', code)
+      .eq('qr_code', qrCode)
       .single()
 
-    if (groupError || !group) {
+    if (tableError || !table) {
       return {
         ok: false,
-        message: 'Group not found. Please check your code and try again.',
+        message: 'Table not found. Please check your code and try again.',
       }
     }
 
-    // Fetch tab for this group with items and products
-    const { data: tab, error: tabError } = await supabase
-      .from('tabs')
-      .select(
-        `
-        *,
-        tab_items (
+    // Fetch current tab for this table with items and products
+    if (table.current_tab_id) {
+      const { data: tab, error: tabError } = await supabase
+        .from('cafe_tabs')
+        .select(
+          `
           *,
-          product:products (*)
+          tab_items:cafe_tab_items (
+            *,
+            product:cafe_products (*)
+          )
+        `
         )
-      `
-      )
-      .eq('group_id', group.id)
-      .single()
+        .eq('id', table.current_tab_id)
+        .single()
 
-    if (tabError || !tab) {
-      // If no tab exists, return empty tab
-      return {
-        ok: true,
-        group,
-        tab: {
-          id: '',
-          group_id: group.id,
-          status: 'open',
-          total: 0,
-          paid_at: null,
-          created_at: new Date().toISOString(),
-          tab_items: [],
-        },
+      if (!tabError && tab) {
+        return {
+          ok: true,
+          table,
+          tab: tab as TabWithItems,
+        }
       }
     }
 
     return {
       ok: true,
-      group,
-      tab: tab as TabWithItems,
+      table,
+      tab: null,
     }
   } catch (error) {
-    console.error('Error fetching group by client code:', error)
+    console.error('Error fetching table by QR code:', error)
     return {
       ok: false,
       message: 'An error occurred. Please try again.',
