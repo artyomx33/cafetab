@@ -24,7 +24,7 @@ export default function SellerLoginPage() {
 
     if (seller) {
       login(seller);
-      router.push("/seller/groups");
+      router.push("/seller/tables");
     } else {
       setError(verifyError || "Invalid PIN");
       setPin("");

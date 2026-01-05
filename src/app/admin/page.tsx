@@ -6,12 +6,14 @@ import { ActionCard } from '@/components/ui/action-card'
 import { StatCard } from '@/components/ui/stat-card'
 import { IconBox } from '@/components/ui/icon-box'
 import {
-  Users,
+  Utensils,
   ClipboardList,
   DollarSign,
   ShoppingCart,
   Package,
-  Clock
+  Clock,
+  UserCog,
+  Settings
 } from 'lucide-react'
 
 export default function AdminDashboard() {
@@ -40,55 +42,76 @@ export default function AdminDashboard() {
         transition={{ duration: 0.4 }}
       >
         <h1 className="text-3xl font-bold text-[var(--foreground)]">Dashboard</h1>
-        <p className="text-sm text-[var(--muted-foreground)] mt-1">Welcome to the GolfTab admin panel</p>
+        <p className="text-sm text-[var(--muted-foreground)] mt-1">Welcome to the CafeTab admin panel</p>
       </motion.div>
 
       {/* Action Cards */}
       <motion.div
-        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.1 }}
       >
         <ActionCard
-          href="/admin/groups"
-          icon={<Users className="w-6 h-6" />}
+          href="/admin/tables"
+          icon={<Utensils className="w-6 h-6" />}
           color="gold"
-          title="Create Group"
-          subtitle="Start a new tab"
+          title="Manage Tables"
+          subtitle="View and edit tables"
           glow
         />
         <ActionCard
-          href="/admin/groups"
-          icon={<ClipboardList className="w-6 h-6" />}
+          href="/admin/products"
+          icon={<Package className="w-6 h-6" />}
           color="teal"
-          title="Active Tabs"
-          subtitle={`${stats.activeGroups} groups running`}
+          title="Products"
+          subtitle="Menu management"
+        />
+        <ActionCard
+          href="/admin/sellers"
+          icon={<UserCog className="w-6 h-6" />}
+          color="purple"
+          title="Sellers"
+          subtitle="Staff accounts"
+        />
+        <ActionCard
+          href="/admin/settings"
+          icon={<Settings className="w-6 h-6" />}
+          color="muted"
+          title="Settings"
+          subtitle="Venue configuration"
         />
       </motion.div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          label="Total Sales"
+          label="Today's Revenue"
           value={`$${stats.totalSales.toFixed(2)}`}
           icon={<DollarSign className="w-6 h-6" />}
           iconColor="gold"
           delay={0.2}
         />
         <StatCard
-          label="Active Groups"
-          value={stats.activeGroups}
-          icon={<Users className="w-6 h-6" />}
+          label="Total Tables"
+          value={stats.totalTables}
+          icon={<Utensils className="w-6 h-6" />}
           iconColor="teal"
           delay={0.3}
         />
         <StatCard
-          label="Items Sold"
-          value={stats.itemsSold}
-          icon={<ShoppingCart className="w-6 h-6" />}
+          label="Occupied Tables"
+          value={stats.occupiedTables}
+          icon={<ClipboardList className="w-6 h-6" />}
           iconColor="purple"
           delay={0.4}
+        />
+        <StatCard
+          label="Open Tabs"
+          value={stats.openTabs}
+          icon={<ShoppingCart className="w-6 h-6" />}
+          iconColor="muted"
+          delay={0.5}
         />
       </div>
 
@@ -170,7 +193,7 @@ export default function AdminDashboard() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-[var(--foreground)] truncate">{item.productName}</p>
                       <p className="text-sm text-[var(--muted-foreground)] truncate">
-                        {item.sellerName} · {item.groupName} · {item.quantity}x
+                        {item.sellerName} · {item.tableName} · {item.quantity}x
                       </p>
                     </div>
                     <div className="text-right">

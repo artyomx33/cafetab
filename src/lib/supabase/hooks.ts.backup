@@ -9,11 +9,9 @@ import type {
   Product,
   Category,
   Table,
-  TableStatus,
   Order,
   OrderItem,
   Notification,
-  VenueSettings,
   TabWithItems as TabWithItemsType,
   CategoryWithProducts as CategoryWithProductsType,
   TableWithTab,
@@ -93,6 +91,86 @@ export function useTables() {
   return { tables, loading, refresh }
 }
 
+export function useTableByQR(qrCode: string) {
+  const [table, setTable] = useState<Table | null>(null)
+  const [tab, setTab] = useState<TabWithItemsType | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    if (!qrCode) {
+      setLoading(false)
+      return
+    }
+
+    const { data: tableData, error: err } = await supabase
+      .from('cafe_tables')
+      .select('*')
+      .eq('qr_code', qrCode)
+      .single()
+
+    if (err || !tableData) {
+      setError('Table not found')
+      setLoading(false)
+      return
+    }
+
+    setTable(tableData as Table)
+
+    // Get current tab with items if exists
+    if (tableData.current_tab_id) {
+      const { data: tabData } = await supabase
+        .from('cafe_tabs')
+        .select(`
+          *,
+          cafe_tab_items (
+            *,
+            cafe_products (*)
+          )
+        `)
+        .eq('id', tableData.current_tab_id)
+        .single()
+
+      if (tabData) {
+        const tabWithItems: TabWithItemsType = {
+          id: tabData.id,
+          table_id: tabData.table_id,
+          type: tabData.type,
+          status: tabData.status,
+          total: tabData.total,
+          prepaid_amount: tabData.prepaid_amount,
+          balance: tabData.balance,
+          tip: tabData.tip,
+          paid_at: tabData.paid_at,
+          created_by: tabData.created_by,
+          created_at: tabData.created_at,
+          tab_items: tabData.cafe_tab_items?.map((item: any) => ({
+            id: item.id,
+            tab_id: item.tab_id,
+            product_id: item.product_id,
+            seller_id: item.seller_id,
+            order_id: item.order_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            created_at: item.created_at,
+            product: item.cafe_products
+          })) || []
+        }
+        setTab(tabWithItems)
+      }
+    }
+
+    setError(null)
+    setLoading(false)
+  }, [qrCode])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { table, tab, loading, error, refresh }
+}
+
 export function useTableById(id: string) {
   const [table, setTable] = useState<Table | null>(null)
   const [loading, setLoading] = useState(true)
@@ -148,58 +226,6 @@ export function useCreateTable() {
   }, [])
 
   return { create, loading }
-}
-
-export function useUpdateTable() {
-  const [loading, setLoading] = useState(false)
-
-  const update = useCallback(async (id: string, data: Partial<{ number: string; section: string | null; status: TableStatus }>): Promise<Table> => {
-    setLoading(true)
-
-    const { data: table, error } = await supabase
-      .from('cafe_tables')
-      .update(data)
-      .eq('id', id)
-      .select()
-      .single()
-
-    if (error) throw error
-
-    setLoading(false)
-    return table as Table
-  }, [])
-
-  return { update, loading }
-}
-
-export function useDeleteTable() {
-  const [loading, setLoading] = useState(false)
-
-  const deleteTable = useCallback(async (id: string): Promise<void> => {
-    setLoading(true)
-
-    // Check if table has an active tab
-    const { data: table } = await supabase
-      .from('cafe_tables')
-      .select('current_tab_id')
-      .eq('id', id)
-      .single()
-
-    if (table?.current_tab_id) {
-      throw new Error('Cannot delete table with active tab')
-    }
-
-    const { error } = await supabase
-      .from('cafe_tables')
-      .delete()
-      .eq('id', id)
-
-    if (error) throw error
-
-    setLoading(false)
-  }, [])
-
-  return { deleteTable, loading }
 }
 
 // Categories & Products hooks
@@ -469,26 +495,26 @@ export function useDashboardStats() {
   return { stats, leaderboard, activity, loading, refresh }
 }
 
-export function useAllTables() {
-  const [tables, setTables] = useState<(Table & { total: number })[]>([])
+export function useAllGroups() {
+  const [groups, setGroups] = useState<(Group & { total: number })[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     const { data } = await supabase
-      .from('cafe_tables')
+      .from('golf_groups')
       .select(`
         *,
-        cafe_tabs (total)
+        golf_tabs (total)
       `)
       .order('created_at', { ascending: false })
 
     if (data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tablesWithTotal = data.map((g: any) => ({
+      const groupsWithTotal = data.map((g: any) => ({
         ...g,
-        total: g.cafe_tabs?.[0]?.total || 0
+        total: g.golf_tabs?.[0]?.total || 0
       }))
-      setTables(tablesWithTotal)
+      setGroups(groupsWithTotal)
     }
     setLoading(false)
   }, [])
@@ -497,7 +523,7 @@ export function useAllTables() {
     refresh()
   }, [refresh])
 
-  return { tables, loading, refresh }
+  return { groups, loading, refresh }
 }
 
 export function useAllProducts() {
@@ -1077,194 +1103,4 @@ export function useSendNotification() {
   }, [])
 
   return { sendNotification, loading }
-}
-
-// Hook to get and update venue settings
-export function useVenueSettings() {
-  const [settings, setSettings] = useState<VenueSettings | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(async () => {
-    const { data } = await supabase
-      .from('cafe_venue_settings')
-      .select('*')
-      .single()
-
-    setSettings(data as VenueSettings)
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const updateSettings = useCallback(async (updates: Partial<VenueSettings>) => {
-    if (!settings) return null
-
-    const { data, error } = await supabase
-      .from('cafe_venue_settings')
-      .update(updates)
-      .eq('id', settings.id)
-      .select()
-      .single()
-
-    if (error) throw error
-
-    setSettings(data as VenueSettings)
-    return data as VenueSettings
-  }, [settings])
-
-  return { settings, loading, refresh, updateSettings }
-}
-
-// ============================================
-// ORDER HOOKS (for kitchen display)
-// ============================================
-
-export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled') {
-  const [orders, setOrders] = useState<OrderWithItems[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(async () => {
-    let query = supabase
-      .from('cafe_orders')
-      .select(`
-        *,
-        cafe_order_items (
-          *,
-          cafe_products (*)
-        ),
-        cafe_tabs (
-          cafe_tables (number)
-        )
-      `)
-      .order('created_at', { ascending: false })
-
-    if (status) {
-      query = query.eq('status', status)
-    }
-
-    const { data } = await query
-
-    if (data) {
-      const formatted = data.map((order: any) => ({
-        id: order.id,
-        tab_id: order.tab_id,
-        status: order.status,
-        notes: order.notes,
-        created_at: order.created_at,
-        prepared_at: order.prepared_at,
-        served_at: order.served_at,
-        order_items: order.cafe_order_items?.map((item: any) => ({
-          id: item.id,
-          order_id: item.order_id,
-          product_id: item.product_id,
-          quantity: item.quantity,
-          notes: item.notes,
-          created_at: item.created_at,
-          product: item.cafe_products
-        })) || [],
-        table_number: order.cafe_tabs?.cafe_tables?.number || 'Unknown'
-      }))
-      setOrders(formatted)
-    }
-    setLoading(false)
-  }, [status])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const updateOrderStatus = useCallback(async (orderId: string, newStatus: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled') => {
-    const updateData: any = { status: newStatus }
-
-    if (newStatus === 'ready') {
-      updateData.prepared_at = new Date().toISOString()
-    } else if (newStatus === 'served') {
-      updateData.served_at = new Date().toISOString()
-    }
-
-    const { error } = await supabase
-      .from('cafe_orders')
-      .update(updateData)
-      .eq('id', orderId)
-
-    if (error) throw error
-    refresh()
-  }, [refresh])
-
-  return { orders, loading, refresh, updateOrderStatus }
-}
-
-// ============================================
-// NOTIFICATION HOOKS
-// ============================================
-
-export function useNotifications(sellerId?: string) {
-  const [notifications, setNotifications] = useState<NotificationWithTable[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const refresh = useCallback(async () => {
-    let query = supabase
-      .from('cafe_notifications')
-      .select(`
-        *,
-        cafe_tables (*)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(50)
-
-    if (sellerId) {
-      query = query.or(`seller_id.eq.${sellerId},seller_id.is.null`)
-    }
-
-    const { data } = await query
-
-    if (data) {
-      const formatted = data.map((notif: any) => ({
-        id: notif.id,
-        type: notif.type,
-        table_id: notif.table_id,
-        seller_id: notif.seller_id,
-        message: notif.message,
-        read: notif.read,
-        created_at: notif.created_at,
-        table: notif.cafe_tables
-      }))
-      setNotifications(formatted)
-    }
-    setLoading(false)
-  }, [sellerId])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const markAsRead = useCallback(async (notificationId: string) => {
-    const { error } = await supabase
-      .from('cafe_notifications')
-      .update({ read: true })
-      .eq('id', notificationId)
-
-    if (error) throw error
-    refresh()
-  }, [refresh])
-
-  const markAllAsRead = useCallback(async () => {
-    let query = supabase
-      .from('cafe_notifications')
-      .update({ read: true })
-      .eq('read', false)
-
-    if (sellerId) {
-      query = query.or(`seller_id.eq.${sellerId},seller_id.is.null`)
-    }
-
-    const { error } = await query
-
-    if (error) throw error
-    refresh()
-  }, [sellerId, refresh])
-
-  return { notifications, loading, refresh, markAsRead, markAllAsRead }
 }

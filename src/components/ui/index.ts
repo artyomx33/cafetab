@@ -16,6 +16,9 @@ export type { DialogProps, DialogContentProps } from "./dialog";
 export { GroupCard } from "./group-card";
 export type { GroupCardProps } from "./group-card";
 
+export { TableCard } from "./table-card";
+export type { TableCardProps } from "./table-card";
+
 export { Input } from "./input";
 export type { InputProps } from "./input";
 

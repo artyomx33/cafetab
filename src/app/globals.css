@@ -621,3 +621,13 @@ h1, h2, h3, .font-serif {
 .divider {
   border-color: var(--charcoal-800);
 }
+
+/* Hide scrollbar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

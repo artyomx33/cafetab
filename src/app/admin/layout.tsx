@@ -2,14 +2,15 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, ShoppingBag, UserCog } from 'lucide-react'
+import { LayoutDashboard, Utensils, ShoppingBag, UserCog, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/groups', label: 'Groups', icon: Users },
+  { href: '/admin/tables', label: 'Tables', icon: Utensils },
   { href: '/admin/products', label: 'Products', icon: ShoppingBag },
   { href: '/admin/sellers', label: 'Sellers', icon: UserCog },
+  { href: '/admin/settings', label: 'Settings', icon: Settings },
 ]
 
 export default function AdminLayout({
@@ -27,10 +28,10 @@ export default function AdminLayout({
           {/* Logo */}
           <div className="flex items-center gap-3 px-6 py-5">
             <div className="w-10 h-10 rounded-full bg-[var(--gold-500)] flex items-center justify-center text-xl">
-              ⛳
+              ☕
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">GolfTab</h1>
+              <h1 className="text-xl font-bold text-white">CafeTab</h1>
               <p className="text-xs text-[var(--muted-foreground)]">Admin</p>
             </div>
           </div>

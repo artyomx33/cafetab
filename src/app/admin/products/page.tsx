@@ -22,6 +22,7 @@ export default function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [productName, setProductName] = useState('')
   const [productPrice, setProductPrice] = useState('')
+  const [productDescription, setProductDescription] = useState('')
   const [productCategoryId, setProductCategoryId] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -33,6 +34,7 @@ export default function ProductsPage() {
     setEditingProduct(null)
     setProductName('')
     setProductPrice('')
+    setProductDescription('')
     setProductCategoryId(categories[0]?.id || '')
     setShowProductDialog(true)
   }
@@ -41,6 +43,7 @@ export default function ProductsPage() {
     setEditingProduct(product)
     setProductName(product.name)
     setProductPrice(product.price.toString())
+    setProductDescription(product.description || '')
     setProductCategoryId(product.category_id)
     setShowProductDialog(true)
   }
@@ -54,12 +57,14 @@ export default function ProductsPage() {
         await updateProduct(editingProduct.id, {
           name: productName,
           price: parseFloat(productPrice),
+          description: productDescription || null,
           category_id: productCategoryId
         })
       } else {
         await createProduct({
           name: productName,
           price: parseFloat(productPrice),
+          description: productDescription || undefined,
           category_id: productCategoryId
         })
       }
@@ -295,6 +300,19 @@ export default function ProductsPage() {
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
                 placeholder="Enter product name"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-[var(--muted-foreground)] mb-2">
+                Description (Optional)
+              </label>
+              <textarea
+                value={productDescription}
+                onChange={(e) => setProductDescription(e.target.value)}
+                placeholder="Enter product description"
+                rows={3}
+                className="w-full px-4 py-3 rounded-xl bg-[#1A1A1E] border border-[#2A2A2E] text-white placeholder:text-[var(--muted-foreground)] focus:outline-none focus:border-[var(--gold-500)] focus:ring-1 focus:ring-[var(--gold-500)]/20 transition-all resize-none"
               />
             </div>
 

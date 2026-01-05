@@ -20,8 +20,8 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "GolfTab - Mobile Tab Management",
-  description: "The sexiest way to manage golf course tabs",
+  title: "CafeTab - Universal Tab Management",
+  description: "Modern tab management for cafes, restaurants, and hospitality",
 };
 
 export default function RootLayout({

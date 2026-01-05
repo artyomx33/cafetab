@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "GolfTab - Seller",
-  description: "Seller portal for GolfTab",
+  title: "CafeTab - Seller",
+  description: "Seller portal for CafeTab",
 };
 
 export default function SellerLayout({
@@ -15,7 +15,7 @@ export default function SellerLayout({
       {/* Header with logo */}
       <header className="glass border-b border-[var(--card-border)] flex-shrink-0 px-6 py-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">
-          <span className="text-white">Golf</span>
+          <span className="text-white">Cafe</span>
           <span className="text-gradient-gold">Tab</span>
         </h1>
       </header>
