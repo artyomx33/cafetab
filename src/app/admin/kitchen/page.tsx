@@ -36,11 +36,11 @@ export default function AdminKitchenPage() {
   const [barCategoryId, setBarCategoryId] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const supabase = createClient()
 
   // Fetch bar category ID
   useEffect(() => {
     const fetchBarCategory = async () => {
+      const supabase = createClient()
       const { data } = await supabase
         .from('cafe_categories')
         .select('id')
@@ -54,11 +54,12 @@ export default function AdminKitchenPage() {
     }
 
     fetchBarCategory()
-  }, [supabase])
+  }, [])
 
   // Fetch orders from database
   const fetchOrders = useCallback(async () => {
     try {
+      const supabase = createClient()
       const { data: ordersData, error } = await supabase
         .from('cafe_orders')
         .select(`
@@ -131,7 +132,7 @@ export default function AdminKitchenPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, orders, soundEnabled])
+  }, [orders, soundEnabled])
 
   // Initial fetch
   useEffect(() => {
@@ -150,6 +151,7 @@ export default function AdminKitchenPage() {
   // Handle order status updates
   const handleStartOrder = async (orderId: string) => {
     try {
+      const supabase = createClient()
       const { error } = await supabase
         .from('cafe_orders')
         .update({ status: 'preparing' })
@@ -172,6 +174,7 @@ export default function AdminKitchenPage() {
 
   const handleMarkReady = async (orderId: string) => {
     try {
+      const supabase = createClient()
       const { error } = await supabase
         .from('cafe_orders')
         .update({
@@ -201,6 +204,7 @@ export default function AdminKitchenPage() {
 
   const handleServeOrder = async (orderId: string) => {
     try {
+      const supabase = createClient()
       const { error } = await supabase
         .from('cafe_orders')
         .update({
