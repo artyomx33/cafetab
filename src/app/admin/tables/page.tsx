@@ -2,20 +2,29 @@
 
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { useTables, useCreateTable, useUpdateTable, useDeleteTable } from '@/lib/supabase/hooks'
+import { useTables, useCreateTable, useUpdateTable, useDeleteTable, useAllSellers, useOpenTab, useTabByTableId } from '@/lib/supabase/hooks'
 import { ListRow } from '@/components/ui/list-row'
 import { FilterPills } from '@/components/ui/filter-pills'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { Search, Plus, Utensils, X, QrCode } from 'lucide-react'
-import type { Table, TableStatus } from '@/types'
+import { SellerSelectModal } from '@/components/ui/seller-select-modal'
+import { TabTypeModal } from '@/components/ui/tab-type-modal'
+import { OrderDrawer } from '@/components/ui/order-drawer'
+import { Search, Plus, Utensils, X, QrCode, ShoppingCart } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
+import { useToast } from '@/components/ui/toast'
+import { computeTableStatus, getStatusPulseClass, type TableStatusInput } from '@/lib/utils/table-status'
+import type { Table, TableStatus, Seller, Tab, TableWithTab } from '@/types'
 
 export default function TablesPage() {
   const { tables, loading, refresh } = useTables()
   const { create: createTable } = useCreateTable()
   const { update: updateTable } = useUpdateTable()
   const { deleteTable } = useDeleteTable()
+  const { sellers, loading: sellersLoading } = useAllSellers()
+  const { openTab } = useOpenTab()
+  const toast = useToast()
 
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -31,6 +40,18 @@ export default function TablesPage() {
   // QR Code dialog state
   const [showQRDialog, setShowQRDialog] = useState(false)
   const [selectedTable, setSelectedTable] = useState<Table | null>(null)
+
+  // Order flow state
+  const [orderTable, setOrderTable] = useState<Table | null>(null)
+  const [showSellerModal, setShowSellerModal] = useState(false)
+  const [showOrderDrawer, setShowOrderDrawer] = useState(false)
+  const [selectedSeller, setSelectedSeller] = useState<Seller | null>(null)
+  const [orderTab, setOrderTab] = useState<Tab | null>(null)
+
+  // Tab type modal state (for new tabs)
+  const [showTabTypeModal, setShowTabTypeModal] = useState(false)
+  const [pendingTable, setPendingTable] = useState<Table | null>(null)
+  const [pendingSeller, setPendingSeller] = useState<Seller | null>(null)
 
   const openCreateDialog = () => {
     setEditingTable(null)
@@ -71,7 +92,7 @@ export default function TablesPage() {
       refresh()
     } catch (err) {
       console.error('Failed to save table:', err)
-      alert('Failed to save table. Please try again.')
+      toast.error('Failed to save table. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -79,7 +100,7 @@ export default function TablesPage() {
 
   const handleDelete = async (table: Table) => {
     if (table.current_tab_id) {
-      alert('Cannot delete table with active tab')
+      toast.error('Cannot delete table with active tab')
       return
     }
 
@@ -92,8 +113,103 @@ export default function TablesPage() {
       refresh()
     } catch (err) {
       console.error('Failed to delete table:', err)
-      alert('Failed to delete table. Please try again.')
+      toast.error('Failed to delete table. Please try again.')
     }
+  }
+
+  // Order flow handlers
+  const handleTableClick = (table: Table) => {
+    setOrderTable(table)
+    setShowSellerModal(true)
+  }
+
+  const handleSellerSelect = async (seller: Seller) => {
+    if (!orderTable) return
+
+    setSelectedSeller(seller)
+    setShowSellerModal(false)
+
+    try {
+      // Check if table already has an open tab
+      if (orderTable.current_tab_id) {
+        // Fetch the existing tab
+        const { createClient } = await import('@/lib/supabase/client')
+        const supabase = createClient()
+        const { data: existingTab } = await supabase
+          .from('cafe_tabs')
+          .select('*')
+          .eq('id', orderTable.current_tab_id)
+          .single()
+
+        if (existingTab) {
+          setOrderTab(existingTab as Tab)
+          setShowOrderDrawer(true)
+          return
+        }
+      }
+
+      // New table - ask for tab type first
+      setPendingTable(orderTable)
+      setPendingSeller(seller)
+      setShowTabTypeModal(true)
+    } catch (err) {
+      console.error('Failed to check tab:', err)
+      toast.error('Failed to start order. Please try again.')
+    }
+  }
+
+  const handleTabTypeSelect = async (type: 'regular' | 'prepaid', amount?: number) => {
+    if (!pendingTable || !pendingSeller) return
+
+    try {
+      const newTab = await openTab(pendingTable.id, type, pendingSeller.id, amount)
+      setOrderTab(newTab)
+      setOrderTable(pendingTable)
+      setSelectedSeller(pendingSeller)
+      setShowTabTypeModal(false)
+      setShowOrderDrawer(true)
+      setPendingTable(null)
+      setPendingSeller(null)
+      refresh()
+    } catch (err) {
+      console.error('Failed to open tab:', err)
+      toast.error('Failed to start order. Please try again.')
+    }
+  }
+
+  const handleOrderComplete = () => {
+    setShowOrderDrawer(false)
+    setOrderTable(null)
+    setSelectedSeller(null)
+    setOrderTab(null)
+    refresh()
+  }
+
+  const handleCloseDrawer = () => {
+    setShowOrderDrawer(false)
+    setOrderTable(null)
+    setSelectedSeller(null)
+    setOrderTab(null)
+  }
+
+  const handleBackToSellerSelect = () => {
+    setShowOrderDrawer(false)
+    setShowSellerModal(true)
+  }
+
+  // Helper to get pulse ring class for a table
+  const getTablePulseClass = (table: TableWithTab): string => {
+    const statusInput: TableStatusInput = {
+      tabOpenedAt: table.current_tab?.created_at || null,
+      lastOrderAt: null, // TODO: fetch last order time
+      tabClosedAt: null,
+      tabTotal: table.current_tab?.total || 0,
+      paymentState: table.current_tab?.status === 'paid' ? 'closed' :
+                    table.current_tab ? 'open' : null,
+      hasActiveTab: !!table.current_tab_id,
+    }
+    const status = computeTableStatus(statusInput)
+    return getStatusPulseClass(status)
   }
 
   // Filter tables
@@ -185,13 +301,15 @@ export default function TablesPage() {
           filteredTables.map((table, index) => (
             <motion.div
               key={table.id}
-              className="card-glass rounded-xl p-6 space-y-4"
+              className={`card-glass rounded-xl p-6 space-y-4 ${getTablePulseClass(table)}`}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 + index * 0.05 }}
             >
-              {/* Table Header */}
-              <div className="flex items-start justify-between">
+              {/* Table Header - dimmed for available tables */}
+              <div className={`flex items-start justify-between transition-opacity ${
+                !table.current_tab_id ? 'opacity-50' : ''
+              }`}>
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--teal-500)] to-[var(--teal-600)] flex items-center justify-center">
                     <Utensils className="w-6 h-6 text-white" />
@@ -214,14 +332,29 @@ export default function TablesPage() {
                 </span>
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-2">
+              {/* Order Button - Primary Action */}
+              <button
+                onClick={() => handleTableClick(table)}
+                className={`w-full px-4 py-3 text-sm font-semibold rounded-lg text-white transition-all flex items-center justify-center gap-2 shadow-lg ${
+                  table.current_tab_id
+                    ? 'bg-gradient-to-r from-[var(--gold-500)] to-[var(--gold-600)] hover:from-[var(--gold-400)] hover:to-[var(--gold-500)]'
+                    : 'bg-gradient-to-r from-[var(--teal-500)] to-[var(--teal-600)] hover:from-[var(--teal-400)] hover:to-[var(--teal-500)]'
+                }`}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                {table.current_tab_id ? 'Add to Tab' : 'Start Order'}
+              </button>
+
+              {/* Secondary Actions - dimmed for available tables */}
+              <div className={`flex gap-2 transition-opacity ${
+                !table.current_tab_id ? 'opacity-60' : ''
+              }`}>
                 <button
                   onClick={() => openQRDialog(table)}
                   className="flex-1 px-3 py-2 text-sm font-medium rounded-lg bg-[var(--charcoal-700)] hover:bg-[var(--charcoal-600)] text-white transition-colors flex items-center justify-center gap-2"
                 >
                   <QrCode className="w-4 h-4" />
-                  QR Code
+                  QR
                 </button>
                 <button
                   onClick={() => openEditDialog(table)}
@@ -336,30 +469,80 @@ export default function TablesPage() {
           {selectedTable && (
             <div className="space-y-4">
               <div className="flex justify-center p-6 bg-white rounded-xl">
-                <div className="text-center">
-                  <p className="text-gray-600 mb-4">QR Code Display</p>
-                  <p className="text-sm text-gray-500">Install qrcode.react to display QR codes</p>
-                  <p className="text-xs text-gray-400 mt-2 font-mono">npm install qrcode.react</p>
-                </div>
+                <QRCodeSVG
+                  value={`${typeof window !== 'undefined' ? window.location.origin : ''}/table/${selectedTable.qr_code}`}
+                  size={200}
+                  level="H"
+                  includeMargin={true}
+                />
               </div>
-              <div className="text-center">
+              <div className="text-center space-y-1">
                 <p className="text-sm text-[var(--muted-foreground)]">
-                  QR Code: <span className="font-mono text-white">{selectedTable.qr_code}</span>
+                  Table Code: <span className="font-mono text-white">{selectedTable.qr_code}</span>
+                </p>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Scan to access table menu
                 </p>
               </div>
-              <Button
-                className="w-full"
-                onClick={() => {
-                  navigator.clipboard.writeText(selectedTable.qr_code)
-                  alert('QR code copied to clipboard!')
-                }}
-              >
-                Copy QR Code
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => {
+                    navigator.clipboard.writeText(selectedTable.qr_code)
+                  }}
+                >
+                  Copy Code
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/table/${selectedTable.qr_code}`)
+                  }}
+                >
+                  Copy URL
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Seller Selection Modal */}
+      <SellerSelectModal
+        table={orderTable}
+        sellers={sellers}
+        isOpen={showSellerModal}
+        onClose={() => {
+          setShowSellerModal(false)
+          setOrderTable(null)
+        }}
+        onSelectSeller={handleSellerSelect}
+        loading={sellersLoading}
+      />
+
+      {/* Tab Type Modal (Regular vs Prepaid) */}
+      <TabTypeModal
+        isOpen={showTabTypeModal}
+        onClose={() => {
+          setShowTabTypeModal(false)
+          setPendingTable(null)
+          setPendingSeller(null)
+        }}
+        onSelect={handleTabTypeSelect}
+        tableNumber={pendingTable?.number}
+      />
+
+      {/* Order Drawer */}
+      <OrderDrawer
+        table={orderTable}
+        tab={orderTab}
+        seller={selectedSeller}
+        isOpen={showOrderDrawer}
+        onClose={handleCloseDrawer}
+        onBack={handleBackToSellerSelect}
+        onOrderComplete={handleOrderComplete}
+      />
     </div>
   )
 }

@@ -421,7 +421,7 @@ export default function TableTabPage() {
         onClose={() => setShowReviewDrawer(false)}
         items={items}
         tableNumber={table?.number}
-        tableName={table?.section}
+        tableName={table?.section ?? undefined}
         total={cartTotal}
         onUpdateQuantity={updateQuantity}
         onRemoveItem={removeItem}
