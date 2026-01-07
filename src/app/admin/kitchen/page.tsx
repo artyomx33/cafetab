@@ -70,7 +70,7 @@ export default function AdminKitchenPage() {
           created_at,
           cafe_tabs!inner (
             table_id,
-            cafe_tables!inner (
+            cafe_tables!cafe_tabs_table_id_fkey (
               number
             )
           ),
@@ -80,13 +80,6 @@ export default function AdminKitchenPage() {
             cafe_products!inner (
               name,
               category_id
-            ),
-            cafe_order_item_modifiers (
-              quantity,
-              price_adjustment,
-              cafe_modifiers!inner (
-                name
-              )
             )
           )
         `)
@@ -110,11 +103,7 @@ export default function AdminKitchenPage() {
             quantity: item.quantity,
             notes: item.notes,
             categoryId: item.cafe_products.category_id,
-            modifiers: item.cafe_order_item_modifiers?.map((mod: any) => ({
-              name: mod.cafe_modifiers.name,
-              priceAdjustment: mod.price_adjustment,
-              quantity: mod.quantity,
-            })) || [],
+            modifiers: [],
           })),
         }))
 
@@ -147,6 +136,27 @@ export default function AdminKitchenPage() {
 
     return () => clearInterval(interval)
   }, [fetchOrders])
+
+  // Auto-archive: Mark ready orders as served after 5 minutes
+  useEffect(() => {
+    const autoArchiveInterval = setInterval(async () => {
+      const now = new Date()
+      const readyToArchive = orders.filter(order => {
+        if (order.status !== 'ready') return false
+        const orderTime = new Date(order.createdAt)
+        const minutesSinceOrder = (now.getTime() - orderTime.getTime()) / (1000 * 60)
+        // Auto-archive after 5 minutes of being ready (roughly PREP_TIME + 5)
+        return minutesSinceOrder >= 17 // ~12 min prep + 5 min wait
+      })
+
+      // Silently mark as served (assumed picked up)
+      for (const order of readyToArchive) {
+        await handleServeOrder(order.orderId)
+      }
+    }, 60000) // Check every minute
+
+    return () => clearInterval(autoArchiveInterval)
+  }, [orders])
 
   // Handle order status updates
   const handleStartOrder = async (orderId: string) => {
@@ -435,6 +445,7 @@ export default function AdminKitchenPage() {
                   createdAt={order.createdAt}
                   notes={order.notes}
                   items={order.items}
+                  onServe={() => handleServeOrder(order.orderId)}
                 />
               ))}
             </AnimatePresence>

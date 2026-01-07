@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "motion/react";
+import { motion, useMotionValue, useTransform, PanInfo } from "motion/react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { OrderStatus } from "@/types";
-import { Clock } from "lucide-react";
+import { Clock, CheckCircle, ChevronLeft } from "lucide-react";
 
 export interface OrderTicketProps {
   orderId: string;
@@ -26,11 +26,32 @@ export interface OrderTicketProps {
   }>;
   onStart?: () => void;
   onDone?: () => void;
+  onServe?: () => void;
 }
 
 const OrderTicket = React.forwardRef<HTMLDivElement, OrderTicketProps>(
-  ({ orderId, tableNumber, status, createdAt, notes, items, onStart, onDone }, ref) => {
+  ({ orderId, tableNumber, status, createdAt, notes, items, onStart, onDone, onServe }, ref) => {
     const [timeAgo, setTimeAgo] = React.useState<string>("");
+    const [isExiting, setIsExiting] = React.useState(false);
+
+    // Swipe gesture state for ready orders
+    const x = useMotionValue(0);
+    const opacity = useTransform(x, [-150, 0], [0, 1]);
+    const swipeIndicatorOpacity = useTransform(x, [-100, -50, 0], [1, 0.5, 0]);
+
+    // Handle swipe complete
+    const handleDragEnd = (_: any, info: PanInfo) => {
+      if (status === 'ready' && onServe && info.offset.x < -100) {
+        setIsExiting(true);
+        // Trigger haptic feedback if available
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+        setTimeout(() => {
+          onServe();
+        }, 200);
+      }
+    };
 
     // Calculate time since order was placed
     React.useEffect(() => {
@@ -76,18 +97,42 @@ const OrderTicket = React.forwardRef<HTMLDivElement, OrderTicketProps>(
       cancelled: "bg-red-500/10 border-red-500/30",
     };
 
+    const isReady = status === 'ready' && onServe;
+
     return (
-      <motion.div
-        ref={ref}
-        className={cn(
-          "rounded-xl border-2 p-4 space-y-4 min-h-[300px] flex flex-col",
-          statusBg[status]
+      <div className="relative overflow-hidden rounded-xl">
+        {/* Swipe indicator background - visible when swiping */}
+        {isReady && (
+          <motion.div
+            className="absolute inset-0 bg-gradient-to-r from-green-600 to-green-500 flex items-center justify-end pr-6 rounded-xl"
+            style={{ opacity: swipeIndicatorOpacity }}
+          >
+            <div className="flex items-center gap-2 text-white font-bold">
+              <ChevronLeft className="w-6 h-6 animate-pulse" />
+              <span>Picked Up</span>
+              <CheckCircle className="w-6 h-6" />
+            </div>
+          </motion.div>
         )}
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        layout
-      >
+
+        <motion.div
+          ref={ref}
+          className={cn(
+            "rounded-xl border-2 p-4 space-y-4 min-h-[300px] flex flex-col relative bg-[var(--charcoal-900)]",
+            statusBg[status],
+            isReady && "cursor-grab active:cursor-grabbing"
+          )}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: isExiting ? 0 : 1, scale: isExiting ? 0.8 : 1, x: isExiting ? -200 : 0 }}
+          exit={{ opacity: 0, scale: 0.95, x: -100 }}
+          layout
+          // Swipe props - only enabled for ready orders
+          drag={isReady ? "x" : false}
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={{ left: 0.3, right: 0 }}
+          style={isReady ? { x, opacity } : undefined}
+          onDragEnd={isReady ? handleDragEnd : undefined}
+        >
         {/* Header - Table Number & Time */}
         <div className="flex items-start justify-between">
           <div>
@@ -173,13 +218,40 @@ const OrderTicket = React.forwardRef<HTMLDivElement, OrderTicketProps>(
               Mark Ready
             </Button>
           )}
-          {status === "ready" && (
+          {status === "ready" && onServe && (
+            <div className="flex-1 flex flex-col gap-2">
+              {/* Swipe hint for touch users */}
+              <div className="text-center text-green-400/70 text-sm flex items-center justify-center gap-2">
+                <ChevronLeft className="w-4 h-4" />
+                <span>Swipe left to pick up</span>
+              </div>
+              {/* Button for laptop/desktop users */}
+              <Button
+                onClick={() => {
+                  setIsExiting(true);
+                  if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                  }
+                  setTimeout(() => {
+                    onServe();
+                  }, 200);
+                }}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                size="large"
+              >
+                <CheckCircle className="w-5 h-5 mr-2" />
+                Mark Picked Up
+              </Button>
+            </div>
+          )}
+          {status === "ready" && !onServe && (
             <div className="flex-1 text-center text-green-400 font-semibold py-3">
               Ready for Pickup
             </div>
           )}
         </div>
-      </motion.div>
+        </motion.div>
+      </div>
     );
   }
 );

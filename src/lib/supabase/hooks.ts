@@ -240,6 +240,8 @@ export function useCategories() {
   useEffect(() => {
     const fetchCategories = async () => {
       const supabase = getSupabase()
+
+      // Fetch categories with products
       const { data } = await supabase
         .from('cafe_categories')
         .select(`
@@ -248,6 +250,15 @@ export function useCategories() {
         `)
         .eq('is_visible', true)
         .order('sort_order')
+
+      // Fetch product IDs that have modifier groups (for quick-add eligibility)
+      const { data: modifierLinks } = await supabase
+        .from('cafe_product_modifier_groups')
+        .select('product_id')
+
+      const productsWithModifiers = new Set(
+        (modifierLinks || []).map((link: { product_id: string }) => link.product_id)
+      )
 
       if (data) {
         const formatted = data.map((cat: any) => ({
@@ -259,6 +270,10 @@ export function useCategories() {
           products: (cat.cafe_products || [])
             .filter((p: Product) => p.is_active)
             .sort((a: Product, b: Product) => a.sort_order - b.sort_order)
+            .map((p: Product) => ({
+              ...p,
+              has_modifiers: productsWithModifiers.has(p.id)
+            }))
         }))
         setCategories(formatted)
       }
@@ -809,7 +824,13 @@ export function useTabByTableId(tableId: string) {
     refresh()
   }, [refresh])
 
-  const addItem = useCallback(async (productId: string, quantity: number, sellerId: string) => {
+  const addItem = useCallback(async (
+    productId: string,
+    quantity: number,
+    sellerId: string,
+    modifiers?: { modifierId: string; quantity: number; priceAdjustment: number }[],
+    notes?: string
+  ) => {
     if (!tab) return null
     const supabase = getSupabase()
 
@@ -822,6 +843,14 @@ export function useTabByTableId(tableId: string) {
 
     if (!product) return null
 
+    // Calculate unit price including modifiers
+    let unitPrice = product.price
+    if (modifiers && modifiers.length > 0) {
+      modifiers.forEach(mod => {
+        unitPrice += mod.priceAdjustment * mod.quantity
+      })
+    }
+
     const { data: item, error } = await supabase
       .from('cafe_tab_items')
       .insert({
@@ -829,12 +858,30 @@ export function useTabByTableId(tableId: string) {
         product_id: productId,
         seller_id: sellerId,
         quantity,
-        unit_price: product.price
+        unit_price: unitPrice
       })
       .select()
       .single()
 
     if (error) throw error
+
+    // Add modifiers to tab item if any
+    if (modifiers && modifiers.length > 0 && item) {
+      const modifierInserts = modifiers.map(mod => ({
+        tab_item_id: item.id,
+        modifier_id: mod.modifierId,
+        quantity: mod.quantity,
+        price_adjustment: mod.priceAdjustment
+      }))
+
+      const { error: modError } = await supabase
+        .from('cafe_tab_item_modifiers')
+        .insert(modifierInserts)
+
+      if (modError) {
+        console.error('Failed to add tab item modifiers:', modError)
+      }
+    }
 
     refresh()
     return item

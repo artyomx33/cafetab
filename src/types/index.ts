@@ -55,6 +55,8 @@ export interface Product {
   sort_order: number
   price_type: PriceType
   created_at: string
+  // Runtime field - computed when fetching categories
+  has_modifiers?: boolean
 }
 
 export type ProductInsert = Omit<Product, 'id' | 'created_at'>

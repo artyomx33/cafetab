@@ -3,13 +3,50 @@
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTableByQR, useClientMenu, useCreateOrder, useProductWithModifiers } from '@/lib/supabase/hooks'
-import { ArrowLeft, ShoppingCart, Plus, Minus, X } from 'lucide-react'
+import { useToast } from '@/components/ui/toast'
+import { motion, AnimatePresence } from 'motion/react'
+import { ArrowLeft, ShoppingCart, Plus, Minus, X, Flame, Star, Leaf, Wine, Coffee, UtensilsCrossed, Soup, IceCream, Beer, GlassWater } from 'lucide-react'
 import { ProductModal } from '@/components/ui/product-modal'
 import type { Product, CartItem, ProductWithModifiers } from '@/types'
+
+// Category visual themes - icons and gradients
+const categoryThemes: Record<string, { icon: React.ReactNode; gradient: string; emoji: string }> = {
+  'appetizers': { icon: <UtensilsCrossed size={16} />, gradient: 'from-amber-400 to-orange-500', emoji: '🥟' },
+  'bao buns': { icon: <UtensilsCrossed size={16} />, gradient: 'from-amber-300 to-yellow-500', emoji: '🥟' },
+  'specials': { icon: <Star size={16} />, gradient: 'from-purple-400 to-pink-500', emoji: '⭐' },
+  'ramen': { icon: <Soup size={16} />, gradient: 'from-red-400 to-orange-500', emoji: '🍜' },
+  'extra proteins': { icon: <UtensilsCrossed size={16} />, gradient: 'from-rose-400 to-red-500', emoji: '🥩' },
+  'woks': { icon: <Flame size={16} />, gradient: 'from-orange-400 to-red-500', emoji: '🔥' },
+  'desserts': { icon: <IceCream size={16} />, gradient: 'from-pink-300 to-purple-400', emoji: '🍰' },
+  'sake': { icon: <Wine size={16} />, gradient: 'from-slate-300 to-slate-500', emoji: '🍶' },
+  'classics': { icon: <GlassWater size={16} />, gradient: 'from-amber-300 to-amber-500', emoji: '🥃' },
+  'signature cocktails': { icon: <Wine size={16} />, gradient: 'from-pink-400 to-rose-500', emoji: '🍸' },
+  'vermut': { icon: <Wine size={16} />, gradient: 'from-red-300 to-rose-500', emoji: '🍷' },
+  'lemonades': { icon: <GlassWater size={16} />, gradient: 'from-yellow-300 to-lime-400', emoji: '🍋' },
+  'soft': { icon: <GlassWater size={16} />, gradient: 'from-blue-300 to-cyan-400', emoji: '🥤' },
+  'beer': { icon: <Beer size={16} />, gradient: 'from-amber-400 to-yellow-500', emoji: '🍺' },
+  'wine': { icon: <Wine size={16} />, gradient: 'from-purple-400 to-red-500', emoji: '🍷' },
+  '0% alcohol cocktails': { icon: <GlassWater size={16} />, gradient: 'from-green-300 to-teal-400', emoji: '🧃' },
+  'margaritas & mezcalitas': { icon: <Wine size={16} />, gradient: 'from-lime-400 to-green-500', emoji: '🍹' },
+}
+
+const defaultTheme = { icon: <Coffee size={16} />, gradient: 'from-[#E07A5F] to-[#F4A261]', emoji: '☕' }
+
+// Helper to detect item attributes from name/description
+function getItemBadges(product: Product): { spicy: boolean; popular: boolean; vegetarian: boolean; new: boolean } {
+  const text = `${product.name} ${product.description || ''}`.toLowerCase()
+  return {
+    spicy: text.includes('spicy') || text.includes('hot') || text.includes('chili') || text.includes('jalapeño'),
+    popular: text.includes('popular') || text.includes('bestseller') || text.includes('signature'),
+    vegetarian: text.includes('vegetarian') || text.includes('vegan') || text.includes('veggie'),
+    new: text.includes('new') || text.includes('special'),
+  }
+}
 
 export default function MenuBrowser() {
   const params = useParams()
   const router = useRouter()
+  const toast = useToast()
   const qrCode = params.qr as string
   const { table, tab } = useTableByQR(qrCode)
   const { categories, loading } = useClientMenu()
@@ -41,7 +78,9 @@ export default function MenuBrowser() {
 
   const handleAddToCart = (item: CartItem) => {
     setCart([...cart, item])
-    setShowCart(true)
+    // Don't auto-open cart - let user continue browsing
+    // Cart stays as floating button until clicked
+    toast.success(`Added ${item.product.name} to cart`)
   }
 
   const updateQuantity = (index: number, change: number) => {
@@ -68,7 +107,7 @@ export default function MenuBrowser() {
   const handleSubmitOrder = async () => {
     if (cart.length === 0) return
     if (!tab) {
-      alert('No active tab found. Please contact staff.')
+      toast.error('No active tab found. Please contact staff.')
       return
     }
 
@@ -85,12 +124,12 @@ export default function MenuBrowser() {
         unit_price: item.totalPrice / item.quantity
       })))
 
-      alert('Order sent to kitchen!')
+      toast.success('Order sent to kitchen!')
       setCart([])
       setShowCart(false)
       router.push(`/table/${qrCode}`)
     } catch (err) {
-      alert('Failed to submit order. Please try again.')
+      toast.error('Failed to submit order. Please try again.')
     }
   }
 
@@ -135,21 +174,25 @@ export default function MenuBrowser() {
           </button>
         </div>
 
-        {/* Category Tabs */}
+        {/* Category Tabs with Emojis */}
         <div className="flex overflow-x-auto px-4 pb-3 gap-2 scrollbar-hide">
-          {categories.map(category => (
-            <button
-              key={category.id}
-              onClick={() => setSelectedCategory(category.id)}
-              className={`px-6 py-2 rounded-full whitespace-nowrap font-medium transition-all ${
-                selectedCategory === category.id
-                  ? 'bg-[#3E2723] text-white shadow-lg'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {category.name}
-            </button>
-          ))}
+          {categories.map(category => {
+            const theme = categoryThemes[category.name.toLowerCase()] || defaultTheme
+            return (
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategory(category.id)}
+                className={`px-5 py-2 rounded-full whitespace-nowrap font-medium transition-all flex items-center gap-2 ${
+                  selectedCategory === category.id
+                    ? 'bg-[#3E2723] text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <span>{theme.emoji}</span>
+                {category.name}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -157,38 +200,68 @@ export default function MenuBrowser() {
       <div className="p-4">
         {selectedCategoryData && selectedCategoryData.products.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {selectedCategoryData.products.map(product => (
-              <button
-                key={product.id}
-                onClick={() => handleProductClick(product)}
-                className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all active:scale-98 text-left w-full"
-              >
-                {product.image_url && (
-                  <div className="aspect-video bg-gradient-to-br from-[#FFF8E7] to-[#F5EBD7] relative">
-                    <img
-                      src={product.image_url}
-                      alt={product.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
-                <div className="p-4">
-                  <h3 className="font-bold text-lg text-[#3E2723] mb-1">{product.name}</h3>
-                  {product.description && (
-                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{product.description}</p>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold text-[#3E2723]">
-                      {product.price_type === 'ask_server' ? 'Ask Server' : `$${product.price.toFixed(2)}`}
-                    </span>
-                    <div className="bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2">
-                      <Plus size={18} />
-                      View
+            {selectedCategoryData.products.map(product => {
+              const theme = categoryThemes[selectedCategoryData.name.toLowerCase()] || defaultTheme
+              const badges = getItemBadges(product)
+
+              return (
+                <motion.button
+                  key={product.id}
+                  onClick={() => handleProductClick(product)}
+                  whileTap={{ scale: 0.98 }}
+                  className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all text-left w-full"
+                >
+                  {/* Visual Header - Image or Gradient Placeholder */}
+                  <div className={`h-24 relative bg-gradient-to-br ${theme.gradient}`}>
+                    {product.image_url ? (
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-4xl opacity-50">{theme.emoji}</span>
+                      </div>
+                    )}
+                    {/* Badges */}
+                    <div className="absolute top-2 left-2 flex gap-1">
+                      {badges.spicy && (
+                        <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Flame size={10} /> Spicy
+                        </span>
+                      )}
+                      {badges.vegetarian && (
+                        <span className="bg-green-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Leaf size={10} /> Veg
+                        </span>
+                      )}
+                      {badges.popular && (
+                        <span className="bg-purple-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Star size={10} /> Popular
+                        </span>
+                      )}
                     </div>
                   </div>
-                </div>
-              </button>
-            ))}
+
+                  <div className="p-4">
+                    <h3 className="font-bold text-lg text-[#3E2723] mb-1 line-clamp-1">{product.name}</h3>
+                    {product.description && (
+                      <p className="text-sm text-gray-500 mb-3 line-clamp-2">{product.description}</p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xl font-bold text-[#3E2723]">
+                        {product.price_type === 'ask_server' ? 'Ask' : `$${product.price.toFixed(2)}`}
+                      </span>
+                      <div className={`bg-gradient-to-r ${theme.gradient} text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-1 text-sm`}>
+                        <Plus size={16} />
+                        Add
+                      </div>
+                    </div>
+                  </div>
+                </motion.button>
+              )
+            })}
           </div>
         ) : (
           <div className="text-center py-12">

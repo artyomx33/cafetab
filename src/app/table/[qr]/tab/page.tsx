@@ -2,7 +2,76 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useTableByQR, useClientTab } from '@/lib/supabase/hooks'
-import { ArrowLeft, Receipt } from 'lucide-react'
+import { ArrowLeft, Receipt, Clock, CheckCircle, Flame } from 'lucide-react'
+
+// ETA computation - estimate based on time since order
+type OrderStatus = 'preparing' | 'almost_ready' | 'ready' | 'delivered'
+
+interface ETAInfo {
+  status: OrderStatus
+  label: string
+  minutesRemaining: number | null
+  color: string
+  bgColor: string
+  icon: React.ReactNode
+}
+
+function computeETA(orderTime: string): ETAInfo {
+  const orderDate = new Date(orderTime)
+  const now = new Date()
+  const minutesSinceOrder = (now.getTime() - orderDate.getTime()) / (1000 * 60)
+
+  // Typical cafe food prep times (can be adjusted)
+  const PREP_TIME = 12 // Average prep time in minutes
+
+  if (minutesSinceOrder >= PREP_TIME + 5) {
+    // Likely delivered already
+    return {
+      status: 'delivered',
+      label: 'Served',
+      minutesRemaining: null,
+      color: 'text-green-600',
+      bgColor: 'bg-green-50',
+      icon: <CheckCircle className="w-3 h-3" />,
+    }
+  }
+
+  if (minutesSinceOrder >= PREP_TIME - 2) {
+    // Should be ready
+    return {
+      status: 'ready',
+      label: 'Ready!',
+      minutesRemaining: 0,
+      color: 'text-green-600',
+      bgColor: 'bg-green-100',
+      icon: <CheckCircle className="w-3 h-3" />,
+    }
+  }
+
+  if (minutesSinceOrder >= PREP_TIME / 2) {
+    // Almost ready
+    const remaining = Math.ceil(PREP_TIME - minutesSinceOrder)
+    return {
+      status: 'almost_ready',
+      label: `~${remaining}min`,
+      minutesRemaining: remaining,
+      color: 'text-amber-600',
+      bgColor: 'bg-amber-50',
+      icon: <Flame className="w-3 h-3" />,
+    }
+  }
+
+  // Just ordered - preparing
+  const remaining = Math.ceil(PREP_TIME - minutesSinceOrder)
+  return {
+    status: 'preparing',
+    label: `~${remaining}min`,
+    minutesRemaining: remaining,
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-50',
+    icon: <Clock className="w-3 h-3" />,
+  }
+}
 
 export default function ViewTab() {
   const params = useParams()
@@ -157,31 +226,42 @@ export default function ViewTab() {
               </div>
 
               <div className="p-4">
-                {items.map(item => (
-                  <div
-                    key={item.id}
-                    className="flex justify-between items-start py-3 border-b border-gray-100 last:border-0"
-                  >
-                    <div className="flex-1">
-                      <div className="font-semibold text-[#3E2723] mb-1">
-                        {item.product?.name || 'Unknown Item'}
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        ${item.unit_price.toFixed(2)} × {item.quantity}
-                      </div>
-                      {item.product?.description && (
-                        <div className="text-xs text-gray-500 mt-1 line-clamp-1">
-                          {item.product.description}
+                {items.map(item => {
+                  const eta = computeETA(item.created_at)
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex justify-between items-start py-3 border-b border-gray-100 last:border-0"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-[#3E2723]">
+                            {item.product?.name || 'Unknown Item'}
+                          </span>
+                          {/* ETA Chip */}
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${eta.bgColor} ${eta.color}`}>
+                            {eta.icon}
+                            {eta.label}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                    <div className="text-right ml-4">
-                      <div className="font-bold text-[#3E2723]">
-                        ${(item.unit_price * item.quantity).toFixed(2)}
+                        <div className="text-sm text-gray-600">
+                          ${item.unit_price.toFixed(2)} × {item.quantity}
+                        </div>
+                        {item.product?.description && (
+                          <div className="text-xs text-gray-500 mt-1 line-clamp-1">
+                            {item.product.description}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right ml-4">
+                        <div className="font-bold text-[#3E2723]">
+                          ${(item.unit_price * item.quantity).toFixed(2)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ))}

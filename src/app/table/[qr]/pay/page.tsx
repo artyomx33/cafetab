@@ -3,73 +3,102 @@
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTableByQR, useClientTab } from '@/lib/supabase/hooks'
-import { ArrowLeft, CreditCard, DollarSign, AlertCircle } from 'lucide-react'
+import { useToast } from '@/components/ui/toast'
+import { motion, AnimatePresence } from 'motion/react'
+import { ArrowLeft, CreditCard, DollarSign, AlertCircle, Users, User, Minus, Plus, X, Check } from 'lucide-react'
 
-const TIP_OPTIONS = [
-  { label: '10%', value: 0.10 },
-  { label: '15%', value: 0.15 },
-  { label: '20%', value: 0.20 },
-  { label: 'Custom', value: -1 },
+// Split bill modes
+type SplitMode = 'full' | 'split' | 'custom'
+
+// Tip presets with visual feedback colors
+const TIP_PRESETS = [
+  { label: 'No tip', value: 0, emoji: '' },
+  { label: '15%', value: 0.15, emoji: '' },
+  { label: '20%', value: 0.20, emoji: '' },
+  { label: '25%', value: 0.25, emoji: '' },
 ]
 
 export default function Checkout() {
   const params = useParams()
   const router = useRouter()
+  const toast = useToast()
   const qrCode = params.qr as string
   const { table, tab: basicTab } = useTableByQR(qrCode)
   const { tab, loading } = useClientTab(basicTab?.id || null)
 
-  const [selectedTip, setSelectedTip] = useState(0.15)
-  const [customTip, setCustomTip] = useState('')
-  const [showCustomTip, setShowCustomTip] = useState(false)
+  // Tip state
+  const [tipPercent, setTipPercent] = useState(0.15)
+  const [customTipAmount, setCustomTipAmount] = useState('')
+  const [isCustomTip, setIsCustomTip] = useState(false)
+
+  // Split bill state
+  const [splitMode, setSplitMode] = useState<SplitMode>('full')
+  const [splitCount, setSplitCount] = useState(2)
+  const [customPayAmount, setCustomPayAmount] = useState('')
+
+  // UI state
   const [processing, setProcessing] = useState(false)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<'pay' | 'refund'>('pay')
 
   const handleTipSelect = (value: number) => {
-    if (value === -1) {
-      setShowCustomTip(true)
-      setSelectedTip(0)
-    } else {
-      setShowCustomTip(false)
-      setSelectedTip(value)
-      setCustomTip('')
-    }
+    setIsCustomTip(false)
+    setTipPercent(value)
+    setCustomTipAmount('')
   }
 
   const handleCustomTipChange = (value: string) => {
-    setCustomTip(value)
-    const amount = parseFloat(value)
-    if (!isNaN(amount) && amount >= 0) {
-      setSelectedTip(amount)
-    }
+    setCustomTipAmount(value)
+    setIsCustomTip(true)
   }
 
+  // Calculate amounts
   const subtotal = tab?.total || 0
-  const tipAmount = showCustomTip
-    ? (parseFloat(customTip) || 0)
-    : subtotal * selectedTip
-  const total = subtotal + tipAmount
+  const tipAmount = isCustomTip
+    ? (parseFloat(customTipAmount) || 0)
+    : subtotal * tipPercent
+  const fullTotal = subtotal + tipAmount
 
-  const handlePayNow = async () => {
+  // Calculate what user pays based on split mode
+  const userPayAmount = (() => {
+    switch (splitMode) {
+      case 'split':
+        return fullTotal / splitCount
+      case 'custom':
+        return parseFloat(customPayAmount) || 0
+      default:
+        return fullTotal
+    }
+  })()
+
+  const handlePayNow = () => {
+    setConfirmAction('pay')
+    setShowConfirmModal(true)
+  }
+
+  const handleConfirmPayment = async () => {
+    setShowConfirmModal(false)
     setProcessing(true)
     // Placeholder for Stripe integration
     await new Promise(resolve => setTimeout(resolve, 1500))
-    alert('Payment functionality will be integrated with Stripe soon!')
+    toast.info('Payment functionality will be integrated with Stripe soon!')
     setProcessing(false)
   }
 
-  const handleRefund = async () => {
+  const handleRefund = () => {
     if (!tab) return
-    const confirmRefund = confirm(
-      `Close tab and request refund of $${tab.balance.toFixed(2)}?`
-    )
-    if (confirmRefund) {
-      setProcessing(true)
-      // Placeholder for refund flow
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      alert('Refund request sent! Staff will process your refund shortly.')
-      setProcessing(false)
-      router.push(`/table/${qrCode}`)
-    }
+    setConfirmAction('refund')
+    setShowConfirmModal(true)
+  }
+
+  const handleConfirmRefund = async () => {
+    setShowConfirmModal(false)
+    setProcessing(true)
+    // Placeholder for refund flow
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    toast.success('Refund request sent! Staff will process your refund shortly.')
+    setProcessing(false)
+    router.push(`/table/${qrCode}`)
   }
 
   if (loading) {
@@ -107,9 +136,9 @@ export default function Checkout() {
   const hasBalance = isPrepaid && tab.balance > 0
 
   return (
-    <div className="min-h-screen pb-6">
+    <div className="min-h-screen pb-6 bg-gradient-to-b from-[#FFF8E7] to-white">
       {/* Header */}
-      <div className="bg-white shadow-md sticky top-0 z-10">
+      <div className="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-10">
         <div className="p-4 flex items-center justify-between">
           <button
             onClick={() => router.push(`/table/${qrCode}`)}
@@ -118,14 +147,40 @@ export default function Checkout() {
             <ArrowLeft size={24} className="text-[#3E2723]" />
           </button>
           <div className="text-center">
-            <h1 className="text-xl font-bold text-[#3E2723]">Checkout</h1>
-            <p className="text-sm text-gray-600">Table {table.number}</p>
+            <h1 className="text-lg font-semibold text-[#3E2723]">Table {table.number}</h1>
           </div>
-          <div className="w-10" /> {/* Spacer */}
+          <div className="w-10" />
         </div>
       </div>
 
       <div className="p-6">
+        {/* HERO TOTAL - The Moment of Truth */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-3xl shadow-xl p-8 mb-6 text-center"
+        >
+          <p className="text-gray-500 text-sm uppercase tracking-wide mb-2">Your Total</p>
+          <motion.div
+            key={userPayAmount}
+            initial={{ scale: 0.9 }}
+            animate={{ scale: 1 }}
+            className="text-5xl font-bold text-[#3E2723] mb-2"
+          >
+            ${userPayAmount.toFixed(2)}
+          </motion.div>
+          {splitMode !== 'full' && (
+            <p className="text-sm text-gray-500">
+              of ${fullTotal.toFixed(2)} total
+            </p>
+          )}
+          {tipAmount > 0 && (
+            <p className="text-sm text-[#E07A5F] mt-1">
+              Includes ${tipAmount.toFixed(2)} tip
+            </p>
+          )}
+        </motion.div>
+
         {/* Prepaid Warning */}
         {isPrepaid && tab.balance <= 0 && (
           <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 mb-6 flex items-start gap-3">
@@ -133,167 +188,330 @@ export default function Checkout() {
             <div>
               <h3 className="font-semibold text-red-800 mb-1">Balance Depleted</h3>
               <p className="text-sm text-red-700">
-                Your prepaid balance has been fully used. Please see staff to top up or pay the remaining amount.
+                Your prepaid balance has been fully used. Please see staff.
               </p>
             </div>
           </div>
         )}
 
-        {/* Bill Summary */}
-        <div className="bg-white rounded-3xl shadow-xl p-6 mb-6">
-          <h2 className="text-xl font-bold text-[#3E2723] mb-4 flex items-center gap-2">
-            <CreditCard size={24} />
-            Bill Summary
-          </h2>
-
-          <div className="space-y-3 mb-4">
-            <div className="flex justify-between text-lg">
-              <span className="text-gray-700">Subtotal:</span>
-              <span className="font-semibold text-[#3E2723]">
-                ${subtotal.toFixed(2)}
-              </span>
+        {/* Split Bill Options */}
+        {!isPrepaid && subtotal > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg p-5 mb-6">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Split the Bill?</h3>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => setSplitMode('full')}
+                className={`py-3 px-2 rounded-xl font-medium transition-all flex flex-col items-center gap-1 ${
+                  splitMode === 'full'
+                    ? 'bg-[#3E2723] text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <User size={20} />
+                <span className="text-xs">Full Bill</span>
+              </button>
+              <button
+                onClick={() => setSplitMode('split')}
+                className={`py-3 px-2 rounded-xl font-medium transition-all flex flex-col items-center gap-1 ${
+                  splitMode === 'split'
+                    ? 'bg-[#3E2723] text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Users size={20} />
+                <span className="text-xs">Split Evenly</span>
+              </button>
+              <button
+                onClick={() => setSplitMode('custom')}
+                className={`py-3 px-2 rounded-xl font-medium transition-all flex flex-col items-center gap-1 ${
+                  splitMode === 'custom'
+                    ? 'bg-[#3E2723] text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <DollarSign size={20} />
+                <span className="text-xs">Custom</span>
+              </button>
             </div>
 
-            {isPrepaid && (
-              <div className="bg-gradient-to-r from-[#FFF8E7] to-[#F5EBD7] rounded-xl p-3 border border-[#E07A5F]">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-700">Prepaid Amount:</span>
-                  <span className="font-semibold">
-                    ${tab.prepaid_amount.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-700">Remaining Balance:</span>
-                  <span className="font-bold text-[#E07A5F]">
-                    ${tab.balance.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <div className="border-t border-gray-200 pt-3">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-700">Add Tip:</span>
-                <DollarSign size={20} className="text-[#E07A5F]" />
-              </div>
-
-              <div className="grid grid-cols-4 gap-2 mb-3">
-                {TIP_OPTIONS.map(option => (
-                  <button
-                    key={option.label}
-                    onClick={() => handleTipSelect(option.value)}
-                    className={`py-3 rounded-xl font-semibold transition-all ${
-                      (option.value === -1 && showCustomTip) ||
-                      (option.value !== -1 && selectedTip === option.value && !showCustomTip)
-                        ? 'bg-[#3E2723] text-white shadow-lg'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-
-              {showCustomTip && (
-                <div className="mb-3">
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg">
-                      $
-                    </span>
-                    <input
-                      type="number"
-                      value={customTip}
-                      onChange={(e) => handleCustomTipChange(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full pl-8 pr-4 py-3 border-2 border-gray-300 rounded-xl text-lg focus:border-[#3E2723] focus:outline-none"
-                      step="0.01"
-                      min="0"
-                    />
+            {/* Split Evenly Controls */}
+            <AnimatePresence>
+              {splitMode === 'split' && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="flex items-center justify-center gap-4 mt-4 pt-4 border-t border-gray-100">
+                    <button
+                      onClick={() => setSplitCount(Math.max(2, splitCount - 1))}
+                      className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                    >
+                      <Minus size={18} />
+                    </button>
+                    <div className="text-center">
+                      <span className="text-3xl font-bold text-[#3E2723]">{splitCount}</span>
+                      <p className="text-xs text-gray-500">people</p>
+                    </div>
+                    <button
+                      onClick={() => setSplitCount(Math.min(10, splitCount + 1))}
+                      className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                    >
+                      <Plus size={18} />
+                    </button>
                   </div>
-                </div>
+                  <p className="text-center text-sm text-gray-500 mt-2">
+                    ${(fullTotal / splitCount).toFixed(2)} per person
+                  </p>
+                </motion.div>
               )}
 
-              <div className="flex justify-between text-gray-600">
-                <span>Tip Amount:</span>
-                <span className="font-semibold">${tipAmount.toFixed(2)}</span>
+              {splitMode === 'custom' && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <label className="text-sm text-gray-600 mb-2 block">Amount to pay:</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-lg">$</span>
+                      <input
+                        type="number"
+                        value={customPayAmount}
+                        onChange={(e) => setCustomPayAmount(e.target.value)}
+                        placeholder="0.00"
+                        max={fullTotal}
+                        className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-xl text-lg focus:border-[#3E2723] focus:outline-none"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                    {parseFloat(customPayAmount) > fullTotal && (
+                      <p className="text-xs text-red-500 mt-1">Amount exceeds total bill</p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Tip Selection */}
+        {!isPrepaid && subtotal > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg p-5 mb-6">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Add a Tip</h3>
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              {TIP_PRESETS.map(preset => (
+                <button
+                  key={preset.label}
+                  onClick={() => handleTipSelect(preset.value)}
+                  className={`py-3 rounded-xl font-semibold transition-all ${
+                    !isCustomTip && tipPercent === preset.value
+                      ? 'bg-[#E07A5F] text-white shadow-lg'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom tip input */}
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+              <input
+                type="number"
+                value={customTipAmount}
+                onChange={(e) => handleCustomTipChange(e.target.value)}
+                onFocus={() => setIsCustomTip(true)}
+                placeholder="Custom tip amount"
+                className={`w-full pl-8 pr-4 py-3 border-2 rounded-xl text-base focus:outline-none transition-colors ${
+                  isCustomTip && customTipAmount
+                    ? 'border-[#E07A5F] bg-orange-50'
+                    : 'border-gray-200 focus:border-[#E07A5F]'
+                }`}
+                step="0.01"
+                min="0"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Bill Breakdown */}
+        <div className="bg-white rounded-2xl shadow-lg p-5 mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Summary</h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Subtotal</span>
+              <span className="font-medium">${subtotal.toFixed(2)}</span>
+            </div>
+            {tipAmount > 0 && (
+              <div className="flex justify-between text-[#E07A5F]">
+                <span>Tip ({isCustomTip ? 'custom' : `${(tipPercent * 100).toFixed(0)}%`})</span>
+                <span className="font-medium">${tipAmount.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="border-t border-gray-100 pt-2 flex justify-between">
+              <span className="font-semibold text-gray-700">Total</span>
+              <span className="font-bold text-[#3E2723]">${fullTotal.toFixed(2)}</span>
+            </div>
+            {splitMode !== 'full' && (
+              <div className="bg-[#FFF8E7] rounded-lg p-2 flex justify-between">
+                <span className="font-semibold text-[#3E2723]">You Pay</span>
+                <span className="font-bold text-[#3E2723]">${userPayAmount.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+
+          {isPrepaid && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="bg-gradient-to-r from-[#FFF8E7] to-[#F5EBD7] rounded-xl p-3">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-gray-700">Prepaid Balance:</span>
+                  <span className="font-bold text-[#E07A5F]">${tab.balance.toFixed(2)}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[#E07A5F] to-[#F4A261] transition-all"
+                    style={{ width: `${Math.max(0, (tab.balance / tab.prepaid_amount) * 100)}%` }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-
-          <div className="border-t-2 border-[#3E2723] pt-4">
-            <div className="flex justify-between items-center">
-              <span className="text-xl font-bold text-gray-700">Total:</span>
-              <span className="text-4xl font-bold text-[#3E2723]">
-                ${total.toFixed(2)}
-              </span>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Payment Info */}
-        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-6">
-          <div className="flex items-start gap-3">
-            <AlertCircle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-800">
-              <p className="font-semibold mb-1">Payment Integration Coming Soon</p>
-              <p>
-                Stripe payment processing will be integrated shortly. For now, please pay at the counter or request assistance from staff.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="space-y-4">
+        {/* CTA Button - The Moment of Truth */}
+        <div className="space-y-3">
           {!isPrepaid && (
-            <button
+            <motion.button
               onClick={handlePayNow}
-              disabled={processing}
-              className="w-full bg-gradient-to-r from-[#3E2723] to-[#5D4037] text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={processing || userPayAmount <= 0}
+              whileTap={{ scale: 0.98 }}
+              className="w-full bg-gradient-to-r from-[#3E2723] to-[#5D4037] text-white py-5 rounded-2xl font-bold text-xl shadow-xl hover:shadow-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
             >
               {processing ? (
                 <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white" />
                   Processing...
                 </>
               ) : (
                 <>
                   <CreditCard size={24} />
-                  Pay ${total.toFixed(2)} Now
+                  Pay ${userPayAmount.toFixed(2)}
                 </>
               )}
-            </button>
+            </motion.button>
           )}
 
           {isPrepaid && hasBalance && (
-            <button
+            <motion.button
               onClick={handleRefund}
               disabled={processing}
-              className="w-full bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              whileTap={{ scale: 0.98 }}
+              className="w-full bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white py-5 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl transition-all disabled:opacity-50"
             >
-              {processing ? 'Processing...' : `Close Tab & Get Refund ($${tab.balance.toFixed(2)})`}
-            </button>
+              {processing ? 'Processing...' : `Close Tab & Refund $${tab.balance.toFixed(2)}`}
+            </motion.button>
           )}
 
           {isPrepaid && !hasBalance && (
             <div className="bg-gray-100 text-gray-600 py-4 rounded-xl text-center font-semibold">
-              No refund available - balance fully used
+              Balance fully used - no refund needed
             </div>
           )}
 
           <button
             onClick={() => router.push(`/table/${qrCode}`)}
-            className="w-full bg-white text-[#3E2723] py-4 rounded-xl font-bold text-lg shadow-md hover:shadow-lg transition-all active:scale-95 border-2 border-[#3E2723]"
+            className="w-full text-[#3E2723] py-3 text-sm hover:underline"
           >
-            Cancel
+            Back to menu
           </button>
         </div>
 
-        {/* Help Text */}
-        <div className="mt-6 text-center text-sm text-gray-500">
-          <p>Need help? Call a server from the main page</p>
+        {/* Payment Coming Soon Note */}
+        <div className="mt-6 text-center text-xs text-gray-400">
+          <p>Stripe integration coming soon</p>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {showConfirmModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-6"
+            onClick={() => setShowConfirmModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full"
+            >
+              {confirmAction === 'pay' ? (
+                <>
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-[#3E2723] rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CreditCard size={32} className="text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-[#3E2723] mb-2">Confirm Payment</h2>
+                    <p className="text-gray-600">You're about to pay</p>
+                    <p className="text-4xl font-bold text-[#3E2723] mt-2">${userPayAmount.toFixed(2)}</p>
+                  </div>
+                  <div className="space-y-3">
+                    <button
+                      onClick={handleConfirmPayment}
+                      className="w-full bg-gradient-to-r from-[#3E2723] to-[#5D4037] text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2"
+                    >
+                      <Check size={20} />
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => setShowConfirmModal(false)}
+                      className="w-full text-gray-500 py-2"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-[#E07A5F] rounded-full flex items-center justify-center mx-auto mb-4">
+                      <DollarSign size={32} className="text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-[#3E2723] mb-2">Close Tab?</h2>
+                    <p className="text-gray-600">You'll receive a refund of</p>
+                    <p className="text-4xl font-bold text-[#E07A5F] mt-2">${tab?.balance.toFixed(2)}</p>
+                  </div>
+                  <div className="space-y-3">
+                    <button
+                      onClick={handleConfirmRefund}
+                      className="w-full bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2"
+                    >
+                      <Check size={20} />
+                      Close & Refund
+                    </button>
+                    <button
+                      onClick={() => setShowConfirmModal(false)}
+                      className="w-full text-gray-500 py-2"
+                    >
+                      Keep Tab Open
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

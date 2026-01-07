@@ -1,40 +1,91 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { ProductTile } from "@/components/ui/product-tile";
 import { CategoryToggle } from "@/components/ui/category-toggle";
-import { QuantitySelector } from "@/components/ui/quantity-selector";
+import { ProductModal } from "@/components/ui/product-modal";
 import { Button } from "@/components/ui/button";
-import { Card, Badge } from "@/components/ui";
+import { Card } from "@/components/ui";
 import { IconBox } from "@/components/ui/icon-box";
-import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
 import { useSellerStore } from "@/stores/seller-store";
 import { useCartStore } from "@/stores/cart-store";
-import { useCategories, useTabByTableId, useTableById } from "@/lib/supabase/hooks";
-import type { Product } from "@/types";
-import { ArrowLeft, Receipt, CheckCircle } from "lucide-react";
+import { useCategories, useTabByTableId, useTableById, useProductWithModifiers, useCreateOrder } from "@/lib/supabase/hooks";
+import type { Product, CartItem as TypeCartItem } from "@/types";
+import { useToast } from "@/components/ui/toast";
+import { ArrowLeft, Receipt, CheckCircle, Trash2, Zap, Plus, ChevronUp } from "lucide-react";
+import { CartReviewDrawer } from "@/components/ui/cart-review-drawer";
+
+// Predefined favorites - popular items by name patterns (can be replaced with analytics later)
+const FAVORITE_PATTERNS = [
+  'water', 'beer', 'coffee', 'coke', 'cola', 'sprite', 'fanta',
+  'wine', 'house', 'espresso', 'latte', 'americano', 'margarita',
+  'nachos', 'fries', 'bread', 'edamame', 'gyoza'
+];
 
 export default function TableTabPage() {
   const router = useRouter();
   const params = useParams();
+  const toast = useToast();
   const tableId = params.tableId as string;
 
   const { seller, isLoggedIn } = useSellerStore();
-  const { items, addItem, updateQuantity, clearCart, getTotal, getItemCount } = useCartStore();
+  const { items, addItemWithModifiers, removeItem, updateQuantity, clearCart, getTotal, getItemCount } = useCartStore();
   const { table, loading: tableLoading } = useTableById(tableId);
   const { categories, loading: categoriesLoading } = useCategories();
-  const { tab, loading: tabLoading, refresh: refreshTab, addItem: addItemToTab, closeTab } = useTabByTableId(tableId);
+  const { tab, loading: tabLoading, refresh: refreshTab, closeTab } = useTabByTableId(tableId);
+  const { createOrder } = useCreateOrder(tab?.id || null);
 
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [isAddingToTab, setIsAddingToTab] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [showTabView, setShowTabView] = useState(false);
+  const [showReviewDrawer, setShowReviewDrawer] = useState(false);
+
+  // Fetch product with modifiers when a product is selected
+  const { product: selectedProductWithModifiers, loading: productLoading } = useProductWithModifiers(selectedProductId || '');
 
   const isLoading = categoriesLoading || tabLoading || tableLoading;
+
+  // Compute favorites from all products
+  const favorites = useMemo(() => {
+    if (!categories.length) return [];
+
+    const allProducts = categories.flatMap(c => c.products);
+
+    // Find products matching favorite patterns
+    const matched = allProducts.filter(product =>
+      FAVORITE_PATTERNS.some(pattern =>
+        product.name.toLowerCase().includes(pattern)
+      )
+    );
+
+    // If not enough matches, add cheap items (likely drinks/sides)
+    if (matched.length < 6) {
+      const cheapItems = allProducts
+        .filter(p => !matched.includes(p) && p.price < 100)
+        .slice(0, 6 - matched.length);
+      return [...matched, ...cheapItems].slice(0, 8);
+    }
+
+    return matched.slice(0, 8);
+  }, [categories]);
+
+  // Quick add for simple items (no modifiers needed)
+  const handleQuickAdd = (product: Product) => {
+    // For simple items, add directly to cart
+    const cartItem: TypeCartItem = {
+      product,
+      quantity: 1,
+      totalPrice: product.price,
+      selectedModifiers: [],
+      notes: '',
+    };
+    addItemWithModifiers(cartItem);
+    toast.success(`Added ${product.name}`);
+  };
 
   // Redirect if not logged in
   useEffect(() => {
@@ -70,28 +121,11 @@ export default function TableTabPage() {
   };
 
   const handleProductClick = (product: Product) => {
-    setSelectedProduct(product);
-    setSelectedQuantity(1);
+    setSelectedProductId(product.id);
   };
 
-  const handleAddToCart = () => {
-    if (!selectedProduct) return;
-
-    addItem({
-      productId: selectedProduct.id,
-      productName: selectedProduct.name,
-      unitPrice: selectedProduct.price,
-    });
-
-    const existingItem = items.find((i) => i.productId === selectedProduct.id);
-    if (existingItem) {
-      updateQuantity(selectedProduct.id, existingItem.quantity + selectedQuantity);
-    } else {
-      updateQuantity(selectedProduct.id, selectedQuantity);
-    }
-
-    setSelectedProduct(null);
-    setSelectedQuantity(1);
+  const handleAddToCart = (cartItem: TypeCartItem) => {
+    addItemWithModifiers(cartItem);
   };
 
   const handleAddAllToTab = async () => {
@@ -100,15 +134,25 @@ export default function TableTabPage() {
     setIsAddingToTab(true);
 
     try {
-      for (const item of items) {
-        await addItemToTab(item.productId, item.quantity, seller.id);
-      }
+      // Create order with all items - this creates order, order_items, tab_items and their modifiers
+      const orderItems = items.map(item => ({
+        product_id: item.productId,
+        quantity: item.quantity,
+        notes: item.notes || undefined,
+        modifiers: item.modifiers.map(m => ({
+          modifier_id: m.modifierId,
+          quantity: m.quantity,
+          price_adjustment: m.priceAdjustment,
+        })),
+        unit_price: item.totalPrice / item.quantity, // Include modifiers in unit price
+      }));
 
+      await createOrder(orderItems);
       await refreshTab();
       clearCart();
     } catch (err) {
       console.error("Failed to add items to tab:", err);
-      alert("Failed to add items to tab. Please try again.");
+      toast.error("Failed to add items to tab. Please try again.");
     } finally {
       setIsAddingToTab(false);
     }
@@ -124,7 +168,7 @@ export default function TableTabPage() {
         router.push("/seller/tables");
       }
     } catch (err) {
-      alert("Failed to close tab. Please try again.");
+      toast.error("Failed to close tab. Please try again.");
     } finally {
       setIsClosing(false);
     }
@@ -266,6 +310,38 @@ export default function TableTabPage() {
             </div>
           ) : (
             <div className="space-y-4">
+              {/* Speed Strip - Quick Favorites */}
+              {favorites.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-6"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap className="w-4 h-4 text-[var(--gold-400)]" />
+                    <span className="text-sm font-semibold text-[var(--muted-foreground)] uppercase tracking-wide">
+                      Quick Add
+                    </span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    {favorites.map((product, index) => (
+                      <motion.button
+                        key={product.id}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.03 }}
+                        onClick={() => handleQuickAdd(product)}
+                        className="flex-shrink-0 bg-gradient-to-br from-[var(--gold-500)] to-[var(--gold-600)] hover:from-[var(--gold-400)] hover:to-[var(--gold-500)] text-white px-4 py-2 rounded-xl font-medium text-sm shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <Plus className="w-4 h-4" />
+                        {product.name.length > 15 ? product.name.slice(0, 15) + '...' : product.name}
+                        <span className="opacity-75">${product.price.toFixed(0)}</span>
+                      </motion.button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
               {categories.map((category, catIndex) => (
                 <motion.div
                   key={category.id}
@@ -295,6 +371,8 @@ export default function TableTabPage() {
                             price={product.price}
                             imageUrl={product.image_url || undefined}
                             onClick={() => handleProductClick(product)}
+                            hasModifiers={product.has_modifiers ?? true}
+                            onQuickAdd={!product.has_modifiers ? () => handleQuickAdd(product) : undefined}
                           />
                         </motion.div>
                       ))}
@@ -307,76 +385,75 @@ export default function TableTabPage() {
         </div>
       )}
 
-      {/* Bottom Bar - Cart Summary (only show when adding items) */}
+      {/* Bottom Bar - Compact Cart Summary (tap to review) */}
       {!showTabView && cartItemCount > 0 && (
         <motion.div
-          className="fixed bottom-0 left-0 right-0 glass border-t-2 border-[var(--gold-500)] shadow-lg px-6 py-4 glow-gold"
+          className="fixed bottom-0 left-0 right-0 glass border-t-2 border-[var(--gold-500)] shadow-lg glow-gold cursor-pointer"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
+          onClick={() => setShowReviewDrawer(true)}
         >
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm text-[var(--muted-foreground)]">
-                {cartItemCount} {cartItemCount === 1 ? "item" : "items"}
-              </p>
-              <p className="text-2xl font-bold text-gradient-gold font-serif">
-                ${cartTotal.toFixed(2)}
-              </p>
+          <div className="flex items-center justify-between px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-[var(--gold-500)] text-[var(--charcoal-900)] rounded-full w-8 h-8 flex items-center justify-center font-bold">
+                {cartItemCount}
+              </div>
+              <div>
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  {cartItemCount} {cartItemCount === 1 ? "item" : "items"}
+                </p>
+                <p className="text-xl font-bold text-gradient-gold font-serif">
+                  ${cartTotal.toFixed(2)}
+                </p>
+              </div>
             </div>
-            <Button
-              onClick={handleAddAllToTab}
-              disabled={isAddingToTab}
-              size="large"
-            >
-              {isAddingToTab ? "Adding..." : "Add to Tab"}
-            </Button>
+            <div className="flex items-center gap-2 text-[var(--gold-400)]">
+              <span className="text-sm font-medium">Review Order</span>
+              <ChevronUp className="w-5 h-5" />
+            </div>
           </div>
         </motion.div>
       )}
 
-      {/* Product Selection Dialog */}
-      {selectedProduct && (
-        <Dialog open={!!selectedProduct} onOpenChange={() => setSelectedProduct(null)}>
-          <DialogContent
-            title={selectedProduct.name}
-            description={`$${selectedProduct.price.toFixed(2)} each`}
-          >
-            <DialogClose onClick={() => setSelectedProduct(null)} />
+      {/* Cart Review Drawer */}
+      <CartReviewDrawer
+        isOpen={showReviewDrawer}
+        onClose={() => setShowReviewDrawer(false)}
+        items={items}
+        tableNumber={table?.number}
+        tableName={table?.section}
+        total={cartTotal}
+        onUpdateQuantity={updateQuantity}
+        onRemoveItem={removeItem}
+        onEditItem={(item) => {
+          // Close drawer, open product modal for editing
+          setShowReviewDrawer(false);
+          // Find original product to get full data
+          const category = categories.find(c =>
+            c.products.some(p => p.id === item.productId)
+          );
+          if (category) {
+            const product = category.products.find(p => p.id === item.productId);
+            if (product) {
+              setSelectedProductId(product.id);
+            }
+          }
+        }}
+        onConfirm={async () => {
+          await handleAddAllToTab();
+          setShowReviewDrawer(false);
+        }}
+        isSubmitting={isAddingToTab}
+      />
 
-            <div className="space-y-6">
-              <div className="flex justify-center">
-                <QuantitySelector
-                  value={selectedQuantity}
-                  onChange={setSelectedQuantity}
-                  min={1}
-                  max={99}
-                />
-              </div>
-
-              <div className="text-center">
-                <p className="text-sm mb-1 text-[var(--muted-foreground)]">
-                  Total
-                </p>
-                <p className="text-3xl font-bold text-gradient-gold font-serif">
-                  ${(selectedProduct.price * selectedQuantity).toFixed(2)}
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <Button
-                  variant="ghost"
-                  onClick={() => setSelectedProduct(null)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleAddToCart} className="flex-1">
-                  Add to Cart
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+      {/* Product Modal with Modifiers */}
+      {selectedProductWithModifiers && !productLoading && (
+        <ProductModal
+          product={selectedProductWithModifiers}
+          isOpen={!!selectedProductId}
+          onClose={() => setSelectedProductId(null)}
+          onAddToCart={handleAddToCart}
+        />
       )}
     </div>
   );
