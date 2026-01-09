@@ -3,11 +3,13 @@
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTableByQR, useSendNotification } from '@/lib/supabase/hooks'
+import { useToast } from '@/components/ui/toast'
 import { Coffee, Receipt, CreditCard, Bell, Phone, UserCheck, Wallet, Clock, CheckCircle } from 'lucide-react'
 
 export default function ClientHub() {
   const params = useParams()
   const router = useRouter()
+  const toast = useToast()
   const qrCode = params.qr as string
   const { table, tab, loading, error } = useTableByQR(qrCode)
   const { sendNotification, loading: notifying } = useSendNotification()
@@ -18,9 +20,9 @@ export default function ClientHub() {
     if (!table) return
     try {
       await sendNotification('bill_request', table.id, `Table ${table.number} requests the bill`)
-      alert('Bill request sent to staff!')
+      toast.success('Bill request sent to staff!')
     } catch (err) {
-      alert('Failed to send request. Please try again.')
+      toast.error('Failed to send request. Please try again.')
     }
   }
 
@@ -28,9 +30,9 @@ export default function ClientHub() {
     if (!table) return
     try {
       await sendNotification('server_call', table.id, `Table ${table.number} needs assistance`)
-      alert('Server has been notified!')
+      toast.success('Server has been notified!')
     } catch (err) {
-      alert('Failed to call server. Please try again.')
+      toast.error('Failed to call server. Please try again.')
     }
   }
 
@@ -40,7 +42,7 @@ export default function ClientHub() {
       await sendNotification('server_call', table.id, `Table ${table.number} requests to open a tab`)
       setTabRequested(true)
     } catch (err) {
-      alert('Failed to send request. Please try again.')
+      toast.error('Failed to send request. Please try again.')
     }
   }
 

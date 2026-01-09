@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react'
 import { motion } from 'motion/react'
 import { useVenueSettings } from '@/lib/supabase/hooks'
 import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/toast'
 import { Settings, Save } from 'lucide-react'
 
 export default function SettingsPage() {
   const { settings, loading, updateSettings } = useVenueSettings()
+  const toast = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Local state for form fields
@@ -35,10 +37,10 @@ export default function SettingsPage() {
         require_prepay: requirePrepay,
         notify_on_every_order: notifyOnEveryOrder,
       })
-      alert('Settings saved successfully!')
+      toast.success('Settings saved successfully!')
     } catch (err) {
       console.error('Failed to save settings:', err)
-      alert('Failed to save settings. Please try again.')
+      toast.error('Failed to save settings. Please try again.')
     } finally {
       setIsSubmitting(false)
     }

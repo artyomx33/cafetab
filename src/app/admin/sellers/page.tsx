@@ -9,10 +9,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogClose } from '@/components/ui/dialog'
 import { Search, UserPlus, ShoppingCart, X } from 'lucide-react'
+import { useToast } from '@/components/ui/toast'
 import type { Seller } from '@/types'
 
 export default function SellersPage() {
   const { sellers, loading, createSeller, updateSeller } = useAllSellers()
+  const toast = useToast()
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -51,7 +53,7 @@ export default function SellersPage() {
       setShowDialog(false)
     } catch (err) {
       console.error('Failed to save seller:', err)
-      alert('Failed to save seller. Please try again.')
+      toast.error('Failed to save seller. Please try again.')
     } finally {
       setIsSubmitting(false)
     }

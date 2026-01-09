@@ -80,7 +80,7 @@ export default function KitchenOrdersPage() {
           created_at,
           cafe_tabs!inner (
             table_id,
-            cafe_tables!inner (
+            cafe_tables!cafe_tabs_table_id_fkey (
               number
             )
           ),
@@ -90,13 +90,6 @@ export default function KitchenOrdersPage() {
             cafe_products!inner (
               name,
               category_id
-            ),
-            cafe_order_item_modifiers (
-              quantity,
-              price_adjustment,
-              cafe_modifiers!inner (
-                name
-              )
             )
           )
         `
@@ -122,11 +115,7 @@ export default function KitchenOrdersPage() {
             quantity: item.quantity,
             notes: item.notes,
             categoryId: item.cafe_products.category_id,
-            modifiers: item.cafe_order_item_modifiers?.map((mod: any) => ({
-              name: mod.cafe_modifiers.name,
-              priceAdjustment: mod.price_adjustment,
-              quantity: mod.quantity,
-            })) || [],
+            modifiers: [],
           })),
         }));
 

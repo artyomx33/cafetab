@@ -9,10 +9,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogClose } from '@/components/ui/dialog'
 import { Search, Plus, Package, ChevronDown, ChevronUp, DollarSign, X } from 'lucide-react'
+import { useToast } from '@/components/ui/toast'
 import type { Product } from '@/types'
 
 export default function ProductsPage() {
   const { products, categories, loading, createProduct, updateProduct, deleteProduct, createCategory } = useAllProducts()
+  const toast = useToast()
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(categories.map(c => c.id)))
@@ -71,7 +73,7 @@ export default function ProductsPage() {
       setShowProductDialog(false)
     } catch (err) {
       console.error('Failed to save product:', err)
-      alert('Failed to save product. Please try again.')
+      toast.error('Failed to save product. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -87,7 +89,7 @@ export default function ProductsPage() {
       setShowCategoryDialog(false)
     } catch (err) {
       console.error('Failed to create category:', err)
-      alert('Failed to create category. Please try again.')
+      toast.error('Failed to create category. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
