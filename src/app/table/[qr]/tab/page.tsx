@@ -243,22 +243,21 @@ export default function ViewTab() {
                           <span className="font-semibold text-[#3E2723]">
                             {item.product?.name || 'Unknown Item'}
                           </span>
-                          {/* ETA Chip */}
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${eta.bgColor} ${eta.color}`}>
-                            {eta.icon}
-                            {eta.label}
-                          </span>
-                          {/* Kitchen Status Badge */}
-                          {(item as { order_status?: string }).order_status === 'preparing' && (
+                          {/* Status Badge - Kitchen status takes priority over ETA estimate */}
+                          {(item as { order_status?: string }).order_status === 'preparing' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
                               <Flame className="w-3 h-3" />
                               Preparing
                             </span>
-                          )}
-                          {(item as { order_status?: string }).order_status === 'ready' && (
+                          ) : (item as { order_status?: string }).order_status === 'ready' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
                               <CheckCircle className="w-3 h-3" />
                               Ready!
+                            </span>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${eta.bgColor} ${eta.color}`}>
+                              {eta.icon}
+                              {eta.label}
                             </span>
                           )}
                         </div>
