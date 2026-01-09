@@ -111,8 +111,12 @@ export default function ViewTab() {
     )
   }
 
-  // Group items by order/time
-  const groupedItems = tab.tab_items.reduce((groups, item) => {
+  // Sort items newest first, then group by order/time
+  const sortedItems = [...tab.tab_items].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+
+  const groupedItems = sortedItems.reduce((groups, item) => {
     const date = new Date(item.created_at).toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -235,7 +239,7 @@ export default function ViewTab() {
                       className="flex justify-between items-start py-3 border-b border-gray-100 last:border-0"
                     >
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="font-semibold text-[#3E2723]">
                             {item.product?.name || 'Unknown Item'}
                           </span>
@@ -244,6 +248,19 @@ export default function ViewTab() {
                             {eta.icon}
                             {eta.label}
                           </span>
+                          {/* Kitchen Status Badge */}
+                          {(item as { order_status?: string }).order_status === 'preparing' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                              <Flame className="w-3 h-3" />
+                              Preparing
+                            </span>
+                          )}
+                          {(item as { order_status?: string }).order_status === 'ready' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                              <CheckCircle className="w-3 h-3" />
+                              Ready!
+                            </span>
+                          )}
                         </div>
                         <div className="text-sm text-gray-600">
                           ${item.unit_price.toFixed(2)} × {item.quantity}

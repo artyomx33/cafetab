@@ -992,7 +992,8 @@ export function useClientTab(tabId: string | null) {
         *,
         cafe_tab_items (
           *,
-          cafe_products (*)
+          cafe_products (*),
+          cafe_orders (status)
         )
       `)
       .eq('id', tabId)
@@ -1021,7 +1022,8 @@ export function useClientTab(tabId: string | null) {
           quantity: item.quantity,
           unit_price: item.unit_price,
           created_at: item.created_at,
-          product: item.cafe_products
+          product: item.cafe_products,
+          order_status: item.cafe_orders?.status || null
         })) || []
       }
       setTab(tabWithItems)
