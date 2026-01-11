@@ -90,6 +90,17 @@ export const OrderDrawer = ({
     addItemWithModifiers(cartItem);
   };
 
+  // Quick add for products without modifiers
+  const handleQuickAdd = (product: Product) => {
+    addItemWithModifiers({
+      product,
+      quantity: 1,
+      selectedModifiers: [],
+      notes: "",
+      totalPrice: product.price,
+    });
+  };
+
   const handleSendToKitchen = async () => {
     if (!tab || !seller || items.length === 0) return;
 
@@ -205,7 +216,9 @@ export const OrderDrawer = ({
                                 name={product.name}
                                 price={product.price}
                                 imageUrl={product.image_url || undefined}
+                                hasModifiers={product.has_modifiers ?? true}
                                 onClick={() => handleProductClick(product)}
+                                onQuickAdd={() => handleQuickAdd(product)}
                               />
                             </motion.div>
                           ))}

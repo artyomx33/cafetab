@@ -2,71 +2,86 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useTableByQR, useClientTab } from '@/lib/supabase/hooks'
-import { ArrowLeft, Receipt, Clock, CheckCircle, Flame } from 'lucide-react'
+import { ArrowLeft, Receipt, Clock, CheckCircle, Flame, Truck } from 'lucide-react'
 
-// ETA computation - estimate based on time since order
-type OrderStatus = 'preparing' | 'almost_ready' | 'ready' | 'delivered'
-
-interface ETAInfo {
-  status: OrderStatus
+// Status badge info based on item status
+interface StatusInfo {
   label: string
-  minutesRemaining: number | null
   color: string
   bgColor: string
   icon: React.ReactNode
 }
 
-function computeETA(orderTime: string): ETAInfo {
-  const orderDate = new Date(orderTime)
-  const now = new Date()
-  const minutesSinceOrder = (now.getTime() - orderDate.getTime()) / (1000 * 60)
-
-  // Typical cafe food prep times (can be adjusted)
-  const PREP_TIME = 12 // Average prep time in minutes
-
-  if (minutesSinceOrder >= PREP_TIME + 5) {
-    // Likely delivered already
+function getStatusInfo(itemStatus: string | null, prepTime: number, orderTime: string): StatusInfo {
+  // If we have an actual item status, use it
+  if (itemStatus === 'delivered') {
     return {
-      status: 'delivered',
-      label: 'Served',
-      minutesRemaining: null,
+      label: 'Delivered',
       color: 'text-green-600',
       bgColor: 'bg-green-50',
-      icon: <CheckCircle className="w-3 h-3" />,
+      icon: <Truck className="w-3 h-3" />,
     }
   }
 
-  if (minutesSinceOrder >= PREP_TIME - 2) {
-    // Should be ready
+  if (itemStatus === 'ready') {
     return {
-      status: 'ready',
       label: 'Ready!',
-      minutesRemaining: 0,
       color: 'text-green-600',
       bgColor: 'bg-green-100',
       icon: <CheckCircle className="w-3 h-3" />,
     }
   }
 
-  if (minutesSinceOrder >= PREP_TIME / 2) {
-    // Almost ready
-    const remaining = Math.ceil(PREP_TIME - minutesSinceOrder)
+  if (itemStatus === 'pending') {
+    // Calculate ETA based on prep_time
+    const orderDate = new Date(orderTime)
+    const now = new Date()
+    const minutesSinceOrder = (now.getTime() - orderDate.getTime()) / (1000 * 60)
+    const remaining = Math.max(0, Math.ceil(prepTime - minutesSinceOrder))
+
+    if (remaining <= 2) {
+      return {
+        label: 'Almost ready',
+        color: 'text-amber-600',
+        bgColor: 'bg-amber-50',
+        icon: <Flame className="w-3 h-3" />,
+      }
+    }
+
     return {
-      status: 'almost_ready',
       label: `~${remaining}min`,
-      minutesRemaining: remaining,
-      color: 'text-amber-600',
-      bgColor: 'bg-amber-50',
-      icon: <Flame className="w-3 h-3" />,
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-50',
+      icon: <Clock className="w-3 h-3" />,
     }
   }
 
-  // Just ordered - preparing
-  const remaining = Math.ceil(PREP_TIME - minutesSinceOrder)
+  // Fallback for items without status (e.g., added by seller directly)
+  const orderDate = new Date(orderTime)
+  const now = new Date()
+  const minutesSinceOrder = (now.getTime() - orderDate.getTime()) / (1000 * 60)
+
+  if (minutesSinceOrder >= prepTime + 5) {
+    return {
+      label: 'Served',
+      color: 'text-green-600',
+      bgColor: 'bg-green-50',
+      icon: <CheckCircle className="w-3 h-3" />,
+    }
+  }
+
+  if (minutesSinceOrder >= prepTime - 2) {
+    return {
+      label: 'Ready!',
+      color: 'text-green-600',
+      bgColor: 'bg-green-100',
+      icon: <CheckCircle className="w-3 h-3" />,
+    }
+  }
+
+  const remaining = Math.ceil(prepTime - minutesSinceOrder)
   return {
-    status: 'preparing',
     label: `~${remaining}min`,
-    minutesRemaining: remaining,
     color: 'text-blue-600',
     bgColor: 'bg-blue-50',
     icon: <Clock className="w-3 h-3" />,
@@ -231,7 +246,10 @@ export default function ViewTab() {
 
               <div className="p-4">
                 {items.map(item => {
-                  const eta = computeETA(item.created_at)
+                  // Get item status and prep_time for accurate ETA
+                  const itemStatus = (item as { item_status?: string | null }).item_status || null
+                  const prepTime = item.product?.prep_time || 10
+                  const statusInfo = getStatusInfo(itemStatus, prepTime, item.created_at)
 
                   return (
                     <div
@@ -243,23 +261,11 @@ export default function ViewTab() {
                           <span className="font-semibold text-[#3E2723]">
                             {item.product?.name || 'Unknown Item'}
                           </span>
-                          {/* Status Badge - Kitchen status takes priority over ETA estimate */}
-                          {(item as { order_status?: string }).order_status === 'preparing' ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                              <Flame className="w-3 h-3" />
-                              Preparing
-                            </span>
-                          ) : (item as { order_status?: string }).order_status === 'ready' ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                              <CheckCircle className="w-3 h-3" />
-                              Ready!
-                            </span>
-                          ) : (
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${eta.bgColor} ${eta.color}`}>
-                              {eta.icon}
-                              {eta.label}
-                            </span>
-                          )}
+                          {/* Status Badge - uses actual item status from kitchen */}
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusInfo.bgColor} ${statusInfo.color}`}>
+                            {statusInfo.icon}
+                            {statusInfo.label}
+                          </span>
                         </div>
                         <div className="text-sm text-gray-600">
                           ${item.unit_price.toFixed(2)} × {item.quantity}

@@ -26,6 +26,7 @@ export default function ProductsPage() {
   const [productPrice, setProductPrice] = useState('')
   const [productDescription, setProductDescription] = useState('')
   const [productCategoryId, setProductCategoryId] = useState('')
+  const [productPrepTime, setProductPrepTime] = useState('10')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Category dialog state
@@ -38,6 +39,7 @@ export default function ProductsPage() {
     setProductPrice('')
     setProductDescription('')
     setProductCategoryId(categories[0]?.id || '')
+    setProductPrepTime('10')
     setShowProductDialog(true)
   }
 
@@ -47,6 +49,7 @@ export default function ProductsPage() {
     setProductPrice(product.price.toString())
     setProductDescription(product.description || '')
     setProductCategoryId(product.category_id)
+    setProductPrepTime(product.prep_time?.toString() || '10')
     setShowProductDialog(true)
   }
 
@@ -60,14 +63,16 @@ export default function ProductsPage() {
           name: productName,
           price: parseFloat(productPrice),
           description: productDescription || null,
-          category_id: productCategoryId
+          category_id: productCategoryId,
+          prep_time: parseInt(productPrepTime) || 10
         })
       } else {
         await createProduct({
           name: productName,
           price: parseFloat(productPrice),
           description: productDescription || undefined,
-          category_id: productCategoryId
+          category_id: productCategoryId,
+          prep_time: parseInt(productPrepTime) || 10
         })
       }
       setShowProductDialog(false)
@@ -347,6 +352,50 @@ export default function ProductsPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-[var(--muted-foreground)] mb-2">
+                Prep Time (minutes)
+              </label>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={productPrepTime}
+                  onChange={(e) => setProductPrepTime(e.target.value)}
+                  placeholder="10"
+                  className="flex-1"
+                />
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setProductPrepTime('1')}
+                    className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                      productPrepTime === '1'
+                        ? 'bg-cyan-500 text-white'
+                        : 'bg-[var(--charcoal-700)] text-[var(--muted-foreground)] hover:bg-[var(--charcoal-600)]'
+                    }`}
+                  >
+                    Quick (1m)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProductPrepTime('10')}
+                    className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                      productPrepTime === '10'
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-[var(--charcoal-700)] text-[var(--muted-foreground)] hover:bg-[var(--charcoal-600)]'
+                    }`}
+                  >
+                    Normal (10m)
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                Quick items (≤3 min) appear in Quick column on Kitchen Display
+              </p>
             </div>
           </div>
 

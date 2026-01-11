@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Utensils, ShoppingBag, UserCog, Settings, ChefHat } from 'lucide-react'
+import { LayoutDashboard, Utensils, ShoppingBag, UserCog, Settings, ChefHat, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { href: '/admin/products', label: 'Products', icon: ShoppingBag },
   { href: '/admin/sellers', label: 'Sellers', icon: UserCog },
   { href: '/admin/kitchen', label: 'Kitchen', icon: ChefHat },
+  { href: '/admin/payments', label: 'Payments', icon: Wallet },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ]
 

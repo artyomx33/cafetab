@@ -54,6 +54,7 @@ export interface Product {
   is_active: boolean
   sort_order: number
   price_type: PriceType
+  prep_time: number // Expected prep time in minutes. Quick items <= 3
   created_at: string
   // Runtime field - computed when fetching categories
   has_modifiers?: boolean
@@ -192,17 +193,22 @@ export type OrderUpdate = Partial<OrderInsert>
 // ============================================
 // ORDER ITEM TYPES (NEW)
 // ============================================
+export type ItemStatus = 'pending' | 'ready' | 'delivered'
+
 export interface OrderItem {
   id: string
   order_id: string
   product_id: string
   quantity: number
   notes: string | null
+  status: ItemStatus
+  ready_at: string | null
+  delivered_at: string | null
   created_at: string
 }
 
-export type OrderItemInsert = Omit<OrderItem, 'id' | 'created_at'>
-export type OrderItemUpdate = Partial<OrderItemInsert>
+export type OrderItemInsert = Omit<OrderItem, 'id' | 'created_at' | 'ready_at' | 'delivered_at'>
+export type OrderItemUpdate = Partial<Omit<OrderItem, 'id' | 'created_at'>>
 
 // ============================================
 // TAB ITEM TYPES
@@ -249,9 +255,12 @@ export interface Transaction {
   tab_id: string
   type: TransactionType
   amount: number
-  payment_method: string | null
+  payment_method: 'card' | 'cash' | null
   processed_by: string | null
   notes: string | null
+  tip_amount: number
+  stripe_payment_id: string | null
+  reference_transaction_id: string | null
   created_at: string
 }
 

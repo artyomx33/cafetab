@@ -11,7 +11,8 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { SellerSelectModal } from '@/components/ui/seller-select-modal'
 import { TabTypeModal } from '@/components/ui/tab-type-modal'
 import { OrderDrawer } from '@/components/ui/order-drawer'
-import { Search, Plus, Utensils, X, QrCode, ShoppingCart } from 'lucide-react'
+import { CloseTabModal } from '@/components/ui/close-tab-modal'
+import { Search, Plus, Utensils, X, QrCode, ShoppingCart, Receipt } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { useToast } from '@/components/ui/toast'
 import { computeTableStatus, getStatusPulseClass, type TableStatusInput } from '@/lib/utils/table-status'
@@ -52,6 +53,12 @@ export default function TablesPage() {
   const [showTabTypeModal, setShowTabTypeModal] = useState(false)
   const [pendingTable, setPendingTable] = useState<Table | null>(null)
   const [pendingSeller, setPendingSeller] = useState<Seller | null>(null)
+
+  // Close tab modal state
+  const [showCloseTabModal, setShowCloseTabModal] = useState(false)
+  const [closeTabTable, setCloseTabTable] = useState<TableWithTab | null>(null)
+  const [closeTabSeller, setCloseTabSeller] = useState<Seller | null>(null)
+  const [isClosingTab, setIsClosingTab] = useState(false)
 
   const openCreateDialog = () => {
     setEditingTable(null)
@@ -129,6 +136,15 @@ export default function TablesPage() {
     setSelectedSeller(seller)
     setShowSellerModal(false)
 
+    // If we're closing a tab, show the close tab modal instead
+    if (isClosingTab && closeTabTable) {
+      setCloseTabSeller(seller)
+      setShowCloseTabModal(true)
+      setIsClosingTab(false)
+      setOrderTable(null)
+      return
+    }
+
     try {
       // Check if table already has an open tab
       if (orderTable.current_tab_id) {
@@ -195,6 +211,29 @@ export default function TablesPage() {
   const handleBackToSellerSelect = () => {
     setShowOrderDrawer(false)
     setShowSellerModal(true)
+  }
+
+  // Close tab flow - first select seller, then show close tab modal
+  const handleCloseTabClick = (table: TableWithTab) => {
+    setCloseTabTable(table)
+    // Use first seller for now, or show seller select
+    if (sellers.length === 1) {
+      setCloseTabSeller(sellers[0])
+      setShowCloseTabModal(true)
+    } else {
+      // Show seller selection first, set flag to know we're closing tab
+      setIsClosingTab(true)
+      setOrderTable(table)
+      setShowSellerModal(true)
+    }
+  }
+
+  const handleCloseTabPaymentComplete = () => {
+    setShowCloseTabModal(false)
+    setCloseTabTable(null)
+    setCloseTabSeller(null)
+    setIsClosingTab(false)
+    refresh()
   }
 
   // Helper to get pulse ring class for a table
@@ -344,6 +383,17 @@ export default function TablesPage() {
                 <ShoppingCart className="w-4 h-4" />
                 {table.current_tab_id ? 'Add to Tab' : 'Start Order'}
               </button>
+
+              {/* Close Tab Button - Only shows when tab is open */}
+              {table.current_tab_id && table.current_tab && (
+                <button
+                  onClick={() => handleCloseTabClick(table)}
+                  className="w-full px-4 py-2.5 text-sm font-semibold rounded-lg bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Receipt className="w-4 h-4" />
+                  Close Tab (${table.current_tab.total.toFixed(2)})
+                </button>
+              )}
 
               {/* Secondary Actions - dimmed for available tables */}
               <div className={`flex gap-2 transition-opacity ${
@@ -516,6 +566,8 @@ export default function TablesPage() {
         onClose={() => {
           setShowSellerModal(false)
           setOrderTable(null)
+          setIsClosingTab(false)
+          setCloseTabTable(null)
         }}
         onSelectSeller={handleSellerSelect}
         loading={sellersLoading}
@@ -543,6 +595,21 @@ export default function TablesPage() {
         onBack={handleBackToSellerSelect}
         onOrderComplete={handleOrderComplete}
       />
+
+      {/* Close Tab Modal */}
+      {closeTabTable?.current_tab && closeTabSeller && (
+        <CloseTabModal
+          isOpen={showCloseTabModal}
+          onClose={() => {
+            setShowCloseTabModal(false)
+            setCloseTabTable(null)
+            setCloseTabSeller(null)
+          }}
+          tab={closeTabTable.current_tab}
+          seller={closeTabSeller}
+          onPaymentComplete={handleCloseTabPaymentComplete}
+        />
+      )}
     </div>
   )
 }

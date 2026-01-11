@@ -12,8 +12,10 @@ import type {
   TableStatus,
   Order,
   OrderItem,
+  ItemStatus,
   Notification,
   VenueSettings,
+  Transaction,
   TabWithItems as TabWithItemsType,
   CategoryWithProducts as CategoryWithProductsType,
   TableWithTab,
@@ -578,14 +580,15 @@ export function useAllProducts() {
     refresh()
   }, [refresh])
 
-  const createProduct = useCallback(async (data: { name: string; price: number; category_id: string; description?: string }) => {
+  const createProduct = useCallback(async (data: { name: string; price: number; category_id: string; description?: string; prep_time?: number }) => {
     const supabase = getSupabase()
     const { data: product, error } = await supabase
       .from('cafe_products')
       .insert({
         ...data,
         is_active: true,
-        sort_order: 0
+        sort_order: 0,
+        prep_time: data.prep_time ?? 10
       })
       .select()
       .single()
@@ -986,34 +989,80 @@ export function useClientTab(tabId: string | null) {
     }
 
     const supabase = getSupabase()
+
+    // Fetch tab with items and products (including prep_time)
     const { data: tabData } = await supabase
       .from('cafe_tabs')
       .select(`
         *,
         cafe_tab_items (
           *,
-          cafe_products (*),
-          cafe_orders (status)
+          cafe_products (*)
         )
       `)
       .eq('id', tabId)
       .single()
 
-    if (tabData) {
-      const tabWithItems: TabWithItemsType = {
-        id: tabData.id,
-        table_id: tabData.table_id,
-        type: tabData.type,
-        status: tabData.status,
-        total: tabData.total,
-        prepaid_amount: tabData.prepaid_amount,
-        balance: tabData.balance,
-        tip: tabData.tip,
-        paid_at: tabData.paid_at,
-        created_by: tabData.created_by,
-        created_at: tabData.created_at,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tab_items: tabData.cafe_tab_items?.map((item: any) => ({
+    if (!tabData) {
+      setLoading(false)
+      return
+    }
+
+    // Get all unique order_ids from tab items
+    const orderIds = [...new Set(
+      tabData.cafe_tab_items
+        ?.filter((item: any) => item.order_id)
+        .map((item: any) => item.order_id) || []
+    )]
+
+    // Fetch order_items status for those orders
+    let orderItemsMap: Record<string, { status: string; product_id: string }[]> = {}
+    if (orderIds.length > 0) {
+      const { data: orderItems } = await supabase
+        .from('cafe_order_items')
+        .select('order_id, product_id, status')
+        .in('order_id', orderIds)
+
+      if (orderItems) {
+        // Group by order_id for easy lookup
+        orderItems.forEach((item: any) => {
+          if (!orderItemsMap[item.order_id]) {
+            orderItemsMap[item.order_id] = []
+          }
+          orderItemsMap[item.order_id].push({
+            status: item.status,
+            product_id: item.product_id
+          })
+        })
+      }
+    }
+
+    const tabWithItems: TabWithItemsType = {
+      id: tabData.id,
+      table_id: tabData.table_id,
+      type: tabData.type,
+      status: tabData.status,
+      total: tabData.total,
+      prepaid_amount: tabData.prepaid_amount,
+      balance: tabData.balance,
+      tip: tabData.tip,
+      paid_at: tabData.paid_at,
+      created_by: tabData.created_by,
+      created_at: tabData.created_at,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tab_items: tabData.cafe_tab_items?.map((item: any) => {
+        // Find matching order_item status
+        let itemStatus: string | null = null
+        if (item.order_id && orderItemsMap[item.order_id]) {
+          const matchingOrderItem = orderItemsMap[item.order_id].find(
+            oi => oi.product_id === item.product_id
+          )
+          if (matchingOrderItem) {
+            itemStatus = matchingOrderItem.status
+          }
+        }
+
+        return {
           id: item.id,
           tab_id: item.tab_id,
           product_id: item.product_id,
@@ -1023,11 +1072,11 @@ export function useClientTab(tabId: string | null) {
           unit_price: item.unit_price,
           created_at: item.created_at,
           product: item.cafe_products,
-          order_status: item.cafe_orders?.status || null
-        })) || []
-      }
-      setTab(tabWithItems)
+          item_status: itemStatus // 'pending' | 'ready' | 'delivered' | null
+        }
+      }) || []
     }
+    setTab(tabWithItems)
     setLoading(false)
   }, [tabId])
 
@@ -1055,6 +1104,15 @@ export function useClientMenu() {
         .eq('is_visible', true)
         .order('sort_order')
 
+      // Fetch product IDs that have modifier groups (for quick-add eligibility)
+      const { data: modifierLinks } = await supabase
+        .from('cafe_product_modifier_groups')
+        .select('product_id')
+
+      const productsWithModifiers = new Set(
+        (modifierLinks || []).map((link: { product_id: string }) => link.product_id)
+      )
+
       if (data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const formatted = data.map((cat: any) => ({
@@ -1066,6 +1124,10 @@ export function useClientMenu() {
           products: (cat.cafe_products || [])
             .filter((p: Product) => p.is_active)
             .sort((a: Product, b: Product) => a.sort_order - b.sort_order)
+            .map((p: Product) => ({
+              ...p,
+              has_modifiers: productsWithModifiers.has(p.id)
+            }))
         }))
         setCategories(formatted)
       }
@@ -1326,6 +1388,9 @@ export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' 
           product_id: item.product_id,
           quantity: item.quantity,
           notes: item.notes,
+          status: item.status || 'pending',
+          ready_at: item.ready_at,
+          delivered_at: item.delivered_at,
           created_at: item.created_at,
           product: item.cafe_products
         })) || [],
@@ -1359,7 +1424,52 @@ export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' 
     refresh()
   }, [refresh])
 
-  return { orders, loading, refresh, updateOrderStatus }
+  // Mark individual item as ready
+  const markItemReady = useCallback(async (itemId: string) => {
+    const supabase = getSupabase()
+    const { error } = await supabase
+      .from('cafe_order_items')
+      .update({
+        status: 'ready',
+        ready_at: new Date().toISOString()
+      })
+      .eq('id', itemId)
+
+    if (error) throw error
+    refresh()
+  }, [refresh])
+
+  // Mark individual item as delivered
+  const markItemDelivered = useCallback(async (itemId: string) => {
+    const supabase = getSupabase()
+    const { error } = await supabase
+      .from('cafe_order_items')
+      .update({
+        status: 'delivered',
+        delivered_at: new Date().toISOString()
+      })
+      .eq('id', itemId)
+
+    if (error) throw error
+    refresh()
+  }, [refresh])
+
+  // Bulk mark items as delivered
+  const markItemsDelivered = useCallback(async (itemIds: string[]) => {
+    const supabase = getSupabase()
+    const { error } = await supabase
+      .from('cafe_order_items')
+      .update({
+        status: 'delivered',
+        delivered_at: new Date().toISOString()
+      })
+      .in('id', itemIds)
+
+    if (error) throw error
+    refresh()
+  }, [refresh])
+
+  return { orders, loading, refresh, updateOrderStatus, markItemReady, markItemDelivered, markItemsDelivered }
 }
 
 // ============================================
@@ -1661,4 +1771,315 @@ export function useLinkProductModifierGroup() {
   }, [])
 
   return { linkProductModifierGroup, loading }
+}
+
+// ============================================
+// PAYMENT & TRANSACTION HOOKS
+// ============================================
+
+// Hook to create a payment transaction
+export function useCreatePayment() {
+  const [loading, setLoading] = useState(false)
+
+  const createPayment = useCallback(async (data: {
+    tab_id: string
+    amount: number
+    tip_amount: number
+    payment_method: 'card' | 'cash'
+    processed_by: string
+    notes?: string
+  }) => {
+    setLoading(true)
+    const supabase = getSupabase()
+
+    const { data: transaction, error } = await supabase
+      .from('cafe_transactions')
+      .insert({
+        tab_id: data.tab_id,
+        type: 'payment',
+        amount: data.amount,
+        tip_amount: data.tip_amount,
+        payment_method: data.payment_method,
+        processed_by: data.processed_by,
+        notes: data.notes || null
+      })
+      .select()
+      .single()
+
+    setLoading(false)
+    if (error) throw error
+    return transaction
+  }, [])
+
+  return { createPayment, loading }
+}
+
+// Hook to get transactions for a tab
+export function useTabTransactions(tabId: string | null) {
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    if (!tabId) {
+      setTransactions([])
+      setLoading(false)
+      return
+    }
+
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('cafe_transactions')
+      .select('*')
+      .eq('tab_id', tabId)
+      .order('created_at', { ascending: false })
+
+    setTransactions(data || [])
+    setLoading(false)
+  }, [tabId])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  // Calculate remaining balance
+  const paidAmount = transactions
+    .filter(t => t.type === 'payment')
+    .reduce((sum, t) => sum + Number(t.amount), 0)
+
+  return { transactions, paidAmount, loading, refresh }
+}
+
+// Hook to get payment history with filters
+export function usePaymentHistory(filters?: {
+  date_from?: string
+  date_to?: string
+  payment_method?: 'card' | 'cash' | null
+  seller_id?: string | null
+}) {
+  const [payments, setPayments] = useState<(Transaction & {
+    tab?: { total: number; table?: { number: string } }
+    seller?: { name: string }
+  })[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    const supabase = getSupabase()
+
+    let query = supabase
+      .from('cafe_transactions')
+      .select(`
+        *,
+        tab:cafe_tabs!tab_id (
+          total,
+          table:cafe_tables!table_id (number)
+        ),
+        seller:cafe_sellers!processed_by (name)
+      `)
+      .eq('type', 'payment')
+      .order('created_at', { ascending: false })
+
+    if (filters?.date_from) {
+      query = query.gte('created_at', filters.date_from)
+    }
+    if (filters?.date_to) {
+      query = query.lte('created_at', filters.date_to)
+    }
+    if (filters?.payment_method) {
+      query = query.eq('payment_method', filters.payment_method)
+    }
+    if (filters?.seller_id) {
+      query = query.eq('processed_by', filters.seller_id)
+    }
+
+    const { data } = await query.limit(100)
+    setPayments(data || [])
+    setLoading(false)
+  }, [filters?.date_from, filters?.date_to, filters?.payment_method, filters?.seller_id])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { payments, loading, refresh }
+}
+
+// Hook to get daily payment stats
+export function useDailyPaymentStats(date?: string) {
+  const [stats, setStats] = useState<{
+    totalRevenue: number
+    cashTotal: number
+    cardTotal: number
+    tipsTotal: number
+    paymentCount: number
+    sellerStats: { seller_id: string; seller_name: string; revenue: number; tips: number; count: number }[]
+  }>({
+    totalRevenue: 0,
+    cashTotal: 0,
+    cardTotal: 0,
+    tipsTotal: 0,
+    paymentCount: 0,
+    sellerStats: []
+  })
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    const supabase = getSupabase()
+
+    // Default to today if no date provided
+    const targetDate = date || new Date().toISOString().split('T')[0]
+    const startOfDay = `${targetDate}T00:00:00`
+    const endOfDay = `${targetDate}T23:59:59`
+
+    const { data: payments } = await supabase
+      .from('cafe_transactions')
+      .select(`
+        *,
+        seller:cafe_sellers!processed_by (id, name)
+      `)
+      .eq('type', 'payment')
+      .gte('created_at', startOfDay)
+      .lte('created_at', endOfDay)
+
+    if (payments) {
+      const totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount) + Number(p.tip_amount || 0), 0)
+      const cashPayments = payments.filter(p => p.payment_method === 'cash')
+      const cardPayments = payments.filter(p => p.payment_method === 'card')
+
+      const cashTotal = cashPayments.reduce((sum, p) => sum + Number(p.amount) + Number(p.tip_amount || 0), 0)
+      const cardTotal = cardPayments.reduce((sum, p) => sum + Number(p.amount) + Number(p.tip_amount || 0), 0)
+      const tipsTotal = payments.reduce((sum, p) => sum + Number(p.tip_amount || 0), 0)
+
+      // Group by seller
+      const sellerMap = new Map<string, { seller_id: string; seller_name: string; revenue: number; tips: number; count: number }>()
+      for (const payment of payments) {
+        const sellerId = payment.processed_by || 'unknown'
+        const sellerName = payment.seller?.name || 'Unknown'
+
+        if (!sellerMap.has(sellerId)) {
+          sellerMap.set(sellerId, { seller_id: sellerId, seller_name: sellerName, revenue: 0, tips: 0, count: 0 })
+        }
+        const seller = sellerMap.get(sellerId)!
+        seller.revenue += Number(payment.amount) + Number(payment.tip_amount || 0)
+        seller.tips += Number(payment.tip_amount || 0)
+        seller.count += 1
+      }
+
+      setStats({
+        totalRevenue,
+        cashTotal,
+        cardTotal,
+        tipsTotal,
+        paymentCount: payments.length,
+        sellerStats: Array.from(sellerMap.values()).sort((a, b) => b.tips - a.tips)
+      })
+    }
+
+    setLoading(false)
+  }, [date])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { stats, loading, refresh }
+}
+
+// Hook to mark a tab as paid and free the table
+export function useMarkTabPaid() {
+  const [loading, setLoading] = useState(false)
+
+  const markTabPaid = useCallback(async (tabId: string) => {
+    setLoading(true)
+    const supabase = getSupabase()
+
+    // Get tab to find table_id
+    const { data: tab } = await supabase
+      .from('cafe_tabs')
+      .select('table_id')
+      .eq('id', tabId)
+      .single()
+
+    if (!tab) {
+      setLoading(false)
+      throw new Error('Tab not found')
+    }
+
+    // Update tab status
+    const { error: tabError } = await supabase
+      .from('cafe_tabs')
+      .update({
+        status: 'paid',
+        paid_at: new Date().toISOString()
+      })
+      .eq('id', tabId)
+
+    if (tabError) {
+      setLoading(false)
+      throw tabError
+    }
+
+    // Free the table
+    await supabase
+      .from('cafe_tables')
+      .update({
+        status: 'available',
+        current_tab_id: null
+      })
+      .eq('id', tab.table_id)
+
+    setLoading(false)
+    return true
+  }, [])
+
+  return { markTabPaid, loading }
+}
+
+// Hook to create a refund
+export function useCreateRefund() {
+  const [loading, setLoading] = useState(false)
+
+  const createRefund = useCallback(async (data: {
+    original_transaction_id: string
+    amount: number
+    processed_by: string
+    notes?: string
+  }) => {
+    setLoading(true)
+    const supabase = getSupabase()
+
+    // Get original transaction to find tab_id
+    const { data: original } = await supabase
+      .from('cafe_transactions')
+      .select('tab_id, payment_method')
+      .eq('id', data.original_transaction_id)
+      .single()
+
+    if (!original) {
+      setLoading(false)
+      throw new Error('Original transaction not found')
+    }
+
+    const { data: transaction, error } = await supabase
+      .from('cafe_transactions')
+      .insert({
+        tab_id: original.tab_id,
+        type: 'refund',
+        amount: -Math.abs(data.amount), // Negative amount for refund
+        tip_amount: 0,
+        payment_method: original.payment_method,
+        processed_by: data.processed_by,
+        reference_transaction_id: data.original_transaction_id,
+        notes: data.notes || 'Refund'
+      })
+      .select()
+      .single()
+
+    setLoading(false)
+    if (error) throw error
+    return transaction
+  }, [])
+
+  return { createRefund, loading }
 }

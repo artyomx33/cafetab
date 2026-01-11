@@ -83,6 +83,19 @@ export default function MenuBrowser() {
     toast.success(`Added ${item.product.name} to cart`)
   }
 
+  // Quick add for products without modifiers
+  const handleQuickAdd = (product: Product) => {
+    const item: CartItem = {
+      product,
+      quantity: 1,
+      selectedModifiers: [],
+      notes: '',
+      totalPrice: product.price,
+    }
+    setCart([...cart, item])
+    toast.success(`Added ${product.name} to cart`)
+  }
+
   const updateQuantity = (index: number, change: number) => {
     setCart(cart.map((item, i) => {
       if (i === index) {
@@ -205,11 +218,11 @@ export default function MenuBrowser() {
               const badges = getItemBadges(product)
 
               return (
-                <motion.button
+                <motion.div
                   key={product.id}
                   onClick={() => handleProductClick(product)}
                   whileTap={{ scale: 0.98 }}
-                  className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all text-left w-full"
+                  className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all text-left w-full cursor-pointer"
                 >
                   {/* Visual Header - Image or Gradient Placeholder */}
                   <div className={`h-24 relative bg-gradient-to-br ${theme.gradient}`}>
@@ -253,13 +266,27 @@ export default function MenuBrowser() {
                       <span className="text-xl font-bold text-[#3E2723]">
                         {product.price_type === 'ask_server' ? 'Ask' : `$${product.price.toFixed(2)}`}
                       </span>
-                      <div className={`bg-gradient-to-r ${theme.gradient} text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-1 text-sm`}>
-                        <Plus size={16} />
-                        Add
-                      </div>
+                      {/* Quick add for items without modifiers */}
+                      {product.has_modifiers === false ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleQuickAdd(product)
+                          }}
+                          className={`bg-gradient-to-r ${theme.gradient} text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-1 text-sm hover:opacity-90 active:scale-95 transition-all`}
+                        >
+                          <Plus size={16} />
+                          Add
+                        </button>
+                      ) : (
+                        <div className={`bg-gradient-to-r ${theme.gradient} text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-1 text-sm opacity-90`}>
+                          <Plus size={16} />
+                          Options
+                        </div>
+                      )}
                     </div>
                   </div>
-                </motion.button>
+                </motion.div>
               )
             })}
           </div>
@@ -319,14 +346,14 @@ export default function MenuBrowser() {
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => updateQuantity(index, -1)}
-                          className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-100"
+                          className="w-8 h-8 rounded-full bg-gray-200 shadow-md flex items-center justify-center hover:bg-gray-300 text-[#3E2723]"
                         >
                           <Minus size={16} />
                         </button>
-                        <span className="font-bold text-lg w-8 text-center">{item.quantity}</span>
+                        <span className="font-bold text-lg w-8 text-center text-[#3E2723]">{item.quantity}</span>
                         <button
                           onClick={() => updateQuantity(index, 1)}
-                          className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-100"
+                          className="w-8 h-8 rounded-full bg-gray-200 shadow-md flex items-center justify-center hover:bg-gray-300 text-[#3E2723]"
                         >
                           <Plus size={16} />
                         </button>
