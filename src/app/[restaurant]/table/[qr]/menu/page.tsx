@@ -1,0 +1,417 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { useTableByQR, useClientMenu, useCreateOrder } from '@/lib/supabase/hooks'
+import { useDemoStore } from '@/stores/demo-store'
+import { useRestaurant } from '@/contexts/RestaurantContext'
+import { useToast } from '@/components/ui/toast'
+import { motion, AnimatePresence } from 'motion/react'
+import { ArrowLeft, ShoppingCart, Plus, Minus, X, Flame, Star, Leaf } from 'lucide-react'
+import type { Product, CartItem } from '@/types'
+
+// Category emoji mapping
+const categoryEmojis: Record<string, string> = {
+  // Food
+  'starters': '🥗',
+  'specials': '⭐',
+  'specials - camote relleno': '🍠',
+  'tacos (3 pz.)': '🌮',
+  'tacos': '🌮',
+  'aguachile de ribeye': '🦐',
+  'aguachile': '🦐',
+  'patadas (2 pz.)': '🫓',
+  'patadas': '🫓',
+  'the best burrito': '🌯',
+  'burrito': '🌯',
+  "chef's dessert": '🍰',
+  'dessert': '🍰',
+  // Drinks
+  'classic cocktails': '🍹',
+  'cocktails': '🍹',
+  'soft drinks': '🥤',
+  'beers': '🍺',
+  'beer': '🍺',
+  'mezcal': '🥃',
+  'tequila': '🥃',
+  'ron': '🥃',
+  'rum': '🥃',
+  'vodka': '🍸',
+  'gin': '🍸',
+  'whisky': '🥃',
+  'whiskey': '🥃',
+  // Fallbacks
+  'default': '☕',
+}
+
+function getCategoryEmoji(name: string): string {
+  const key = name.toLowerCase()
+  return categoryEmojis[key] || categoryEmojis['default']
+}
+
+// Simple cart item for demo
+interface SimpleCartItem {
+  product: { id: string; name: string; price: number; description?: string }
+  quantity: number
+  totalPrice: number
+}
+
+export default function MenuBrowser() {
+  const params = useParams()
+  const router = useRouter()
+  const toast = useToast()
+  const qrCode = params.qr as string
+  const restaurantSlug = params.restaurant as string
+
+  const { restaurant, slug, usesDatabase, formatPrice, getCategories, getTables } = useRestaurant()
+
+  // Database mode hooks
+  const { table: dbTable, tab: dbTab } = useTableByQR(usesDatabase ? qrCode : '')
+  const { categories: dbCategories, loading: dbLoading } = useClientMenu()
+  const { createOrder, loading: submitting } = useCreateOrder(dbTab?.id || null)
+
+  // Demo mode store
+  const { tables: demoTables, initializeRestaurant, addToTab, createOrder: createDemoOrder } = useDemoStore()
+
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [cart, setCart] = useState<SimpleCartItem[]>([])
+  const [showCart, setShowCart] = useState(false)
+
+  // Initialize demo store
+  useEffect(() => {
+    if (!usesDatabase) {
+      initializeRestaurant(slug, getTables())
+    }
+  }, [usesDatabase, slug, getTables, initializeRestaurant])
+
+  // Get data based on mode
+  const demoTable = !usesDatabase ? demoTables.find(t => t.qr_code === qrCode) : null
+  const table = usesDatabase ? dbTable : demoTable
+  const tab = usesDatabase ? dbTab : demoTable?.current_tab
+
+  // Get categories - from database or from restaurant config
+  const categories = usesDatabase
+    ? dbCategories.map(c => ({
+        id: c.id,
+        name: c.name,
+        products: c.products.map(p => ({
+          id: p.id,
+          name: p.name,
+          price: p.price,
+          description: p.description || undefined,
+        })),
+      }))
+    : getCategories()
+
+  const loading = usesDatabase ? dbLoading : false
+
+  // Set first category as selected when loaded
+  useEffect(() => {
+    if (!selectedCategory && categories.length > 0) {
+      setSelectedCategory(categories[0].id)
+    }
+  }, [categories, selectedCategory])
+
+  const handleAddToCart = (product: { id: string; name: string; price: number; description?: string }) => {
+    // Check if item already in cart
+    const existingIndex = cart.findIndex(item => item.product.id === product.id)
+
+    if (existingIndex >= 0) {
+      // Update quantity
+      setCart(cart.map((item, i) =>
+        i === existingIndex
+          ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.product.price }
+          : item
+      ))
+    } else {
+      // Add new item
+      setCart([...cart, {
+        product,
+        quantity: 1,
+        totalPrice: product.price,
+      }])
+    }
+
+    toast.success(`Added ${product.name}`)
+  }
+
+  const updateQuantity = (index: number, change: number) => {
+    setCart(cart.map((item, i) => {
+      if (i === index) {
+        const newQuantity = item.quantity + change
+        if (newQuantity <= 0) return item
+        return { ...item, quantity: newQuantity, totalPrice: newQuantity * item.product.price }
+      }
+      return item
+    }).filter(item => item.quantity > 0))
+  }
+
+  const removeFromCart = (index: number) => {
+    setCart(cart.filter((_, i) => i !== index))
+  }
+
+  const cartTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0)
+  const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
+
+  const handleSubmitOrder = async () => {
+    if (cart.length === 0) return
+
+    if (!tab) {
+      toast.error('No active tab. Please open a tab first.')
+      router.push(`/${slug}/table/${qrCode}`)
+      return
+    }
+
+    if (usesDatabase) {
+      try {
+        await createOrder(cart.map(item => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          unit_price: item.product.price,
+        })))
+
+        toast.success('Order sent to kitchen!')
+        setCart([])
+        setShowCart(false)
+        router.push(`/${slug}/table/${qrCode}`)
+      } catch {
+        toast.error('Failed to submit order. Please try again.')
+      }
+    } else {
+      // Demo mode
+      cart.forEach(item => {
+        addToTab(tab.id, item.product as any, item.quantity)
+      })
+
+      createDemoOrder(
+        tab.id,
+        table?.number || '?',
+        cart.map(item => ({
+          product: item.product as any,
+          quantity: item.quantity,
+        }))
+      )
+
+      toast.success('Order sent! (Demo mode)')
+      setCart([])
+      setShowCart(false)
+      router.push(`/${slug}/table/${qrCode}`)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#3E2723] mx-auto mb-4" />
+          <p className="text-[#3E2723]">Loading menu...</p>
+        </div>
+      </div>
+    )
+  }
+
+  const selectedCategoryData = categories.find(cat => cat.id === selectedCategory)
+
+  return (
+    <div className="min-h-screen pb-32 bg-gradient-to-b from-[#FFF8F0] to-[#FAEBD7]">
+      {/* Header */}
+      <div className="bg-white shadow-md sticky top-0 z-10">
+        <div className="p-4 flex items-center justify-between">
+          <button
+            onClick={() => router.push(`/${slug}/table/${qrCode}`)}
+            className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+          >
+            <ArrowLeft size={24} className="text-[#3E2723]" />
+          </button>
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-[#3E2723]">{restaurant.name}</h1>
+            {table && <p className="text-sm text-gray-600">Table {table.number}</p>}
+          </div>
+          <button
+            onClick={() => setShowCart(!showCart)}
+            className="relative p-2 hover:bg-gray-100 rounded-xl transition-colors"
+          >
+            <ShoppingCart size={24} className="text-[#3E2723]" />
+            {cartItemCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-[#E07A5F] text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {cartItemCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Category Tabs */}
+        <div className="flex overflow-x-auto px-4 pb-3 gap-2 scrollbar-hide">
+          {categories.map(category => {
+            const emoji = getCategoryEmoji(category.name)
+            return (
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategory(category.id)}
+                className={`px-5 py-2 rounded-full whitespace-nowrap font-medium transition-all flex items-center gap-2 ${
+                  selectedCategory === category.id
+                    ? 'bg-[#3E2723] text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <span>{emoji}</span>
+                {category.name}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Products Grid */}
+      <div className="p-4">
+        {selectedCategoryData && selectedCategoryData.products.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {selectedCategoryData.products.map(product => {
+              const emoji = getCategoryEmoji(selectedCategoryData.name)
+
+              return (
+                <motion.button
+                  key={product.id}
+                  onClick={() => handleAddToCart(product)}
+                  whileTap={{ scale: 0.98 }}
+                  className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all text-left w-full"
+                >
+                  {/* Visual Header */}
+                  <div className="h-20 relative bg-gradient-to-br from-amber-100 to-orange-100">
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-4xl opacity-50">{emoji}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4">
+                    <h3 className="font-bold text-lg text-[#3E2723] mb-1 line-clamp-1">{product.name}</h3>
+                    {product.description && (
+                      <p className="text-sm text-gray-500 mb-3 line-clamp-2">{product.description}</p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xl font-bold text-[#3E2723]">
+                        {formatPrice(product.price)}
+                      </span>
+                      <div className="bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-1 text-sm">
+                        <Plus size={16} />
+                        Add
+                      </div>
+                    </div>
+                  </div>
+                </motion.button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-gray-500">No items in this category</p>
+          </div>
+        )}
+      </div>
+
+      {/* Cart Drawer */}
+      {showCart && cart.length > 0 && (
+        <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCart(false)}>
+          <div
+            className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl max-h-[80vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-6">
+              {/* Cart Header */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-[#3E2723]">Your Order</h2>
+                <button
+                  onClick={() => setShowCart(false)}
+                  className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* Cart Items */}
+              <div className="space-y-4 mb-6">
+                {cart.map((item, index) => (
+                  <div key={index} className="bg-gray-50 rounded-xl p-4">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-[#3E2723]">{item.product.name}</h3>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {formatPrice(item.product.price)} each
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => updateQuantity(index, -1)}
+                          className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-100"
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <span className="font-bold text-lg w-8 text-center">{item.quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(index, 1)}
+                          className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center hover:bg-gray-100"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                      <div className="font-bold text-[#3E2723] w-24 text-right">
+                        {formatPrice(item.totalPrice)}
+                      </div>
+                      <button
+                        onClick={() => removeFromCart(index)}
+                        className="p-2 hover:bg-red-50 rounded-lg transition-colors text-red-500"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Cart Total */}
+              <div className="border-t border-gray-200 pt-4 mb-6">
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-lg text-gray-600">Total:</span>
+                  <span className="text-3xl font-bold text-[#3E2723]">
+                    {formatPrice(cartTotal)}
+                  </span>
+                </div>
+
+                {!tab && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+                    <p className="text-sm text-amber-800">
+                      You need to open a tab before ordering. Go back and open a tab first.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Button */}
+              <button
+                onClick={handleSubmitOrder}
+                disabled={submitting || !tab}
+                className="w-full bg-gradient-to-r from-[#3E2723] to-[#5D4037] text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? 'Submitting...' : tab ? 'Submit Order to Kitchen' : 'Open Tab First'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Cart Button */}
+      {!showCart && cart.length > 0 && (
+        <button
+          onClick={() => setShowCart(true)}
+          className="fixed bottom-6 right-6 bg-gradient-to-r from-[#3E2723] to-[#5D4037] text-white px-6 py-4 rounded-full shadow-2xl hover:shadow-3xl transition-all active:scale-95 flex items-center gap-3 z-40"
+        >
+          <ShoppingCart size={24} />
+          <div className="text-left">
+            <div className="text-xs opacity-90">{cartItemCount} items</div>
+            <div className="font-bold">{formatPrice(cartTotal)}</div>
+          </div>
+        </button>
+      )}
+    </div>
+  )
+}
