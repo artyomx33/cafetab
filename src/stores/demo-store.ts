@@ -79,8 +79,9 @@ export const useDemoStore = create<DemoStoreState>((set, get) => ({
   orders: [],
 
   initializeRestaurant: (slug, tables) => {
-    const currentSlug = get().restaurantSlug
-    if (currentSlug === slug) return // Already initialized
+    const state = get()
+    // Initialize if: different slug OR tables are empty (state was lost)
+    if (state.restaurantSlug === slug && state.tables.length > 0) return
 
     set({
       restaurantSlug: slug,
