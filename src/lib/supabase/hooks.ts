@@ -353,13 +353,14 @@ export function useCategories(restaurantId?: string) {
     setLoading(true)
     const supabase = getSupabase()
 
-    // Fetch categories with products
+    // Fetch categories with products (only visible categories)
     let query = supabase
       .from('cafe_categories')
       .select(`
         *,
         cafe_products (*)
       `)
+      .eq('is_visible', true)
       .order('sort_order')
 
     if (restaurantId) {
