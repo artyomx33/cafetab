@@ -1,0 +1,11 @@
+-- Fix Green Vibes tables - only 4 tables needed with VIBES-XX QR codes
+
+-- Delete existing Green Vibes tables
+DELETE FROM cafe_tables WHERE restaurant_id = 'c0000000-0000-0000-0000-000000000003';
+
+-- Insert correct 4 tables with VIBES-XX QR codes
+INSERT INTO cafe_tables (id, number, qr_code, section, status, restaurant_id) VALUES
+  ('c3000000-0000-0000-0000-000000000001', '1', 'VIBES-01', 'Main', 'available', 'c0000000-0000-0000-0000-000000000003'),
+  ('c3000000-0000-0000-0000-000000000002', '2', 'VIBES-02', 'Main', 'available', 'c0000000-0000-0000-0000-000000000003'),
+  ('c3000000-0000-0000-0000-000000000003', '3', 'VIBES-03', 'Main', 'available', 'c0000000-0000-0000-0000-000000000003'),
+  ('c3000000-0000-0000-0000-000000000004', '4', 'VIBES-04', 'Main', 'available', 'c0000000-0000-0000-0000-000000000003');
