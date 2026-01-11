@@ -7,15 +7,25 @@ export default function SellerLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const { restaurant } = useRestaurant()
+  const { restaurant, slug, loading } = useRestaurant()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+        <div className="text-[var(--muted-foreground)]">Loading...</div>
+      </div>
+    )
+  }
+
+  const name = restaurant?.name || slug
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)]">
       {/* Header with restaurant name */}
       <header className="glass border-b border-[var(--card-border)] flex-shrink-0 px-6 py-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">
-          <span className="text-white">{restaurant.name.split(' ')[0]}</span>
-          <span className="text-gradient-gold">{restaurant.name.split(' ').slice(1).join(' ') || 'Tab'}</span>
+          <span className="text-white">{name.split(' ')[0]}</span>
+          <span className="text-gradient-gold">{name.split(' ').slice(1).join(' ') || 'Tab'}</span>
         </h1>
       </header>
 

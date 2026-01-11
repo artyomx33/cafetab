@@ -10,7 +10,6 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { useSellerStore } from '@/stores/seller-store'
 import { useTableById, useTabByTableId, useOpenTab } from '@/lib/supabase/hooks'
-import { useDemoStore } from '@/stores/demo-store'
 import { useRestaurant } from '@/contexts/RestaurantContext'
 import { ArrowLeft, Plus } from 'lucide-react'
 
@@ -19,35 +18,20 @@ export default function TableDetailsPage() {
   const params = useParams()
   const tableId = params.tableId as string
 
-  const { restaurant, slug, usesDatabase, formatPrice, getTables } = useRestaurant()
+  const { restaurant, slug, formatPrice, loading: restaurantLoading } = useRestaurant()
   const { seller, isLoggedIn } = useSellerStore()
 
-  // Database mode hooks
-  const { table: dbTable, loading: dbTableLoading } = useTableById(usesDatabase ? tableId : '')
-  const { tab: dbTab, loading: dbTabLoading } = useTabByTableId(usesDatabase ? tableId : '')
-  const { openTab: dbOpenTab, loading: dbOpeningTab } = useOpenTab()
-
-  // Demo mode store
-  const { tables: demoTables, initializeRestaurant, openTab: demoOpenTab } = useDemoStore()
+  // Database hooks
+  const { table, loading: tableLoading } = useTableById(tableId)
+  const { tab, loading: tabLoading } = useTabByTableId(tableId)
+  const { openTab, loading: openingTab } = useOpenTab()
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [selectedTabType, setSelectedTabType] = useState<'regular' | 'prepaid'>('regular')
   const [prepaidAmount, setPrepaidAmount] = useState('')
   const [error, setError] = useState('')
 
-  // Initialize demo store
-  useEffect(() => {
-    if (!usesDatabase) {
-      initializeRestaurant(slug, getTables())
-    }
-  }, [usesDatabase, slug, getTables, initializeRestaurant])
-
-  // Get data based on mode
-  const demoTable = !usesDatabase ? demoTables.find(t => t.id === tableId) : null
-  const table = usesDatabase ? dbTable : demoTable
-  const tab = usesDatabase ? dbTab : demoTable?.current_tab
-  const isLoading = usesDatabase ? (dbTableLoading || dbTabLoading) : false
-  const openingTab = usesDatabase ? dbOpeningTab : false
+  const isLoading = restaurantLoading || tableLoading || tabLoading
 
   // Redirect if not logged in
   useEffect(() => {
@@ -70,20 +54,12 @@ export default function TableDetailsPage() {
 
     setError('')
 
-    if (usesDatabase) {
-      try {
-        const amount = selectedTabType === 'prepaid' ? parseFloat(prepaidAmount) : undefined
-        await dbOpenTab(tableId, selectedTabType, seller.id, amount)
-        router.push(`/${slug}/seller/tables/${tableId}/tab`)
-      } catch {
-        setError('Failed to open tab. Please try again.')
-      }
-    } else {
-      // Demo mode
-      demoOpenTab(tableId, selectedTabType, seller.id)
-      setIsDialogOpen(false)
-      // Just refresh the page state
-      router.refresh()
+    try {
+      const amount = selectedTabType === 'prepaid' ? parseFloat(prepaidAmount) : undefined
+      await openTab(tableId, selectedTabType, seller.id, amount)
+      router.push(`/${slug}/seller/tables/${tableId}/tab`)
+    } catch {
+      setError('Failed to open tab. Please try again.')
     }
   }
 
@@ -178,18 +154,18 @@ export default function TableDetailsPage() {
                   {formatPrice(tab.total)}
                 </span>
               </div>
-              {tab.type === 'prepaid' && 'prepaid_amount' in tab && (
+              {tab.type === 'prepaid' && (
                 <>
                   <div className="flex justify-between items-center">
                     <span className="text-[var(--muted-foreground)]">Prepaid Amount</span>
                     <span className="font-semibold text-[var(--foreground)]">
-                      {formatPrice((tab as any).prepaid_amount)}
+                      {formatPrice(tab.prepaid_amount)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-[var(--card-border)]">
                     <span className="text-[var(--muted-foreground)]">Balance</span>
-                    <span className={`text-xl font-bold ${(tab as any).balance >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
-                      {formatPrice((tab as any).balance)}
+                    <span className={`text-xl font-bold ${tab.balance >= 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
+                      {formatPrice(tab.balance)}
                     </span>
                   </div>
                 </>
@@ -286,7 +262,7 @@ export default function TableDetailsPage() {
             {selectedTabType === 'prepaid' && (
               <div>
                 <label className="block text-sm font-medium mb-2 text-[var(--foreground)]">
-                  Initial Amount ({restaurant.currencySymbol})
+                  Initial Amount ({restaurant?.currency_symbol || '$'})
                 </label>
                 <Input
                   type="number"

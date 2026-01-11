@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTableByQR, useSendNotification } from '@/lib/supabase/hooks'
-import { useDemoStore } from '@/stores/demo-store'
 import { useRestaurant } from '@/contexts/RestaurantContext'
 import { useToast } from '@/components/ui/toast'
 import { Coffee, Receipt, CreditCard, Bell, Phone, UserCheck, Wallet, Clock } from 'lucide-react'
@@ -13,75 +12,45 @@ export default function ClientHub() {
   const router = useRouter()
   const toast = useToast()
   const qrCode = params.qr as string
-  const restaurantSlug = params.restaurant as string
 
-  const { restaurant, slug, usesDatabase, formatPrice, getTableByQR, getTables } = useRestaurant()
+  const { restaurant, slug, formatPrice, loading: restaurantLoading } = useRestaurant()
 
-  // Database mode hooks
-  const { table: dbTable, tab: dbTab, loading: dbLoading, error: dbError } = useTableByQR(usesDatabase ? qrCode : '')
+  // Database hooks
+  const { table, tab, loading: tableLoading, error } = useTableByQR(qrCode)
   const { sendNotification, loading: notifying } = useSendNotification()
-
-  // Demo mode store
-  const { tables: demoTables, initializeRestaurant, openTab } = useDemoStore()
 
   const [tabRequested, setTabRequested] = useState(false)
   const [depositMode, setDepositMode] = useState(false)
 
-  // Initialize demo store
-  useEffect(() => {
-    if (!usesDatabase) {
-      initializeRestaurant(slug, getTables())
-    }
-  }, [usesDatabase, slug, getTables, initializeRestaurant])
-
-  // Get table based on mode
-  const demoTable = !usesDatabase ? demoTables.find(t => t.qr_code === qrCode) : null
-  const table = usesDatabase ? dbTable : demoTable
-  const tab = usesDatabase ? dbTab : demoTable?.current_tab
-  const loading = usesDatabase ? dbLoading : false
-  const error = usesDatabase ? dbError : (!demoTable ? 'Table not found' : null)
+  const loading = restaurantLoading || tableLoading
 
   const handleRequestBill = async () => {
     if (!table) return
-    if (usesDatabase) {
-      try {
-        await sendNotification('bill_request', table.id, `Table ${table.number} requests the bill`)
-        toast.success('Bill request sent to staff!')
-      } catch {
-        toast.error('Failed to send request. Please try again.')
-      }
-    } else {
-      toast.success('Bill request sent! (Demo mode)')
+    try {
+      await sendNotification('bill_request', table.id, `Table ${table.number} requests the bill`)
+      toast.success('Bill request sent to staff!')
+    } catch {
+      toast.error('Failed to send request. Please try again.')
     }
   }
 
   const handleCallServer = async () => {
     if (!table) return
-    if (usesDatabase) {
-      try {
-        await sendNotification('server_call', table.id, `Table ${table.number} needs assistance`)
-        toast.success('Server has been notified!')
-      } catch {
-        toast.error('Failed to call server. Please try again.')
-      }
-    } else {
-      toast.success('Server notified! (Demo mode)')
+    try {
+      await sendNotification('server_call', table.id, `Table ${table.number} needs assistance`)
+      toast.success('Server has been notified!')
+    } catch {
+      toast.error('Failed to call server. Please try again.')
     }
   }
 
   const handleRequestTab = async () => {
     if (!table) return
-    if (usesDatabase) {
-      try {
-        await sendNotification('server_call', table.id, `Table ${table.number} requests to open a tab`)
-        setTabRequested(true)
-      } catch {
-        toast.error('Failed to send request. Please try again.')
-      }
-    } else {
-      // Demo mode - auto-open tab
-      openTab(table.id, 'regular', 'demo-seller')
-      toast.success('Tab opened! You can now order.')
+    try {
+      await sendNotification('server_call', table.id, `Table ${table.number} requests to open a tab`)
+      setTabRequested(true)
+    } catch {
+      toast.error('Failed to send request. Please try again.')
     }
   }
 
@@ -109,7 +78,7 @@ export default function ClientHub() {
             onClick={() => router.push(`/${slug}`)}
             className="text-[#3E2723] underline"
           >
-            Back to {restaurant.name}
+            Back to {restaurant?.name || slug}
           </button>
         </div>
       </div>
@@ -124,16 +93,10 @@ export default function ClientHub() {
           <Coffee size={40} />
         </div>
         <h1 className="text-3xl font-bold text-[#3E2723] mb-2">Welcome!</h1>
-        <p className="text-lg text-gray-600 mb-1">{restaurant.name}</p>
+        <p className="text-lg text-gray-600 mb-1">{restaurant?.name || slug}</p>
         <p className="text-xl text-gray-600 mb-1">Table {table.number}</p>
         {table.section && (
           <p className="text-sm text-gray-500">{table.section} Section</p>
-        )}
-
-        {!usesDatabase && (
-          <span className="inline-block mt-3 px-3 py-1 text-xs bg-teal-100 text-teal-700 rounded-full">
-            Demo Mode
-          </span>
         )}
 
         {/* Tab Status */}
@@ -150,7 +113,7 @@ export default function ClientHub() {
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600">Prepaid Balance:</span>
                   <span className="font-semibold text-[#E07A5F]">
-                    {formatPrice((tab as any).balance || 0)}
+                    {formatPrice(tab.balance || 0)}
                   </span>
                 </div>
               </div>
@@ -182,10 +145,8 @@ export default function ClientHub() {
                     <UserCheck size={24} />
                   </div>
                   <div className="text-left">
-                    <div className="font-bold">{usesDatabase ? 'Request Tab' : 'Open Tab'}</div>
-                    <div className="text-xs text-white/80">
-                      {usesDatabase ? 'Staff will approve your tab' : 'Start ordering now (Demo)'}
-                    </div>
+                    <div className="font-bold">Request Tab</div>
+                    <div className="text-xs text-white/80">Staff will approve your tab</div>
                   </div>
                 </div>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -193,25 +154,23 @@ export default function ClientHub() {
                 </svg>
               </button>
 
-              {usesDatabase && (
-                <button
-                  onClick={() => setDepositMode(true)}
-                  className="w-full bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white rounded-xl p-5 shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-between"
-                >
-                  <div className="flex items-center space-x-4">
-                    <div className="bg-white/20 rounded-lg p-2">
-                      <Wallet size={24} />
-                    </div>
-                    <div className="text-left">
-                      <div className="font-bold">Open with Deposit</div>
-                      <div className="text-xs text-white/80">Pay upfront at the bar</div>
-                    </div>
+              <button
+                onClick={() => setDepositMode(true)}
+                className="w-full bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white rounded-xl p-5 shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className="bg-white/20 rounded-lg p-2">
+                    <Wallet size={24} />
                   </div>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              )}
+                  <div className="text-left">
+                    <div className="font-bold">Open with Deposit</div>
+                    <div className="text-xs text-white/80">Pay upfront at the bar</div>
+                  </div>
+                </div>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
             </div>
 
             <button
@@ -371,7 +330,7 @@ export default function ClientHub() {
 
       {/* Footer */}
       <div className="mt-8 text-center text-sm text-gray-500">
-        <p>Enjoying your experience at {restaurant.name}?</p>
+        <p>Enjoying your experience at {restaurant?.name || slug}?</p>
         <p className="mt-1">Scan the QR code again to return here anytime</p>
       </div>
     </div>

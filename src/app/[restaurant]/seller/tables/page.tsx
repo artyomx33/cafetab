@@ -9,34 +9,23 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogClose } from '@/components/ui/dialog'
 import { useSellerStore } from '@/stores/seller-store'
 import { useTables, useCreateTable } from '@/lib/supabase/hooks'
-import { useDemoStore } from '@/stores/demo-store'
 import { useRestaurant } from '@/contexts/RestaurantContext'
 import { Plus } from 'lucide-react'
 
 export default function SellerTablesPage() {
   const router = useRouter()
-  const { restaurant, slug, usesDatabase, getTables } = useRestaurant()
+  const { restaurantId, slug, loading: restaurantLoading } = useRestaurant()
   const { seller, isLoggedIn } = useSellerStore()
 
-  // Database mode hooks
-  const { tables: dbTables, loading: dbLoading, refresh: dbRefresh } = useTables()
+  // Database hooks
+  const { tables, loading: tablesLoading, refresh } = useTables(restaurantId || undefined)
   const { create, loading: isCreating } = useCreateTable()
-
-  // Demo mode store
-  const { tables: demoTables, initializeRestaurant } = useDemoStore()
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newTableNumber, setNewTableNumber] = useState('')
   const [newTableSection, setNewTableSection] = useState('Main')
   const [error, setError] = useState('')
   const [selectedSection, setSelectedSection] = useState<string>('All')
-
-  // Initialize demo store
-  useEffect(() => {
-    if (!usesDatabase) {
-      initializeRestaurant(slug, getTables())
-    }
-  }, [usesDatabase, slug, getTables, initializeRestaurant])
 
   // Redirect if not logged in
   useEffect(() => {
@@ -45,8 +34,7 @@ export default function SellerTablesPage() {
     }
   }, [isLoggedIn, router, slug])
 
-  const isLoading = usesDatabase ? dbLoading : false
-  const tables = usesDatabase ? dbTables : demoTables
+  const isLoading = restaurantLoading || tablesLoading
 
   const handleCreateTable = async () => {
     if (!newTableNumber.trim()) {
@@ -54,16 +42,11 @@ export default function SellerTablesPage() {
       return
     }
 
-    if (!usesDatabase) {
-      setError('Cannot create tables in demo mode')
-      return
-    }
-
     setError('')
 
     try {
       await create(newTableNumber, newTableSection)
-      dbRefresh()
+      refresh()
       setIsDialogOpen(false)
       setNewTableNumber('')
       setNewTableSection('Main')
@@ -101,15 +84,10 @@ export default function SellerTablesPage() {
           <h2 className="text-2xl font-bold text-[var(--foreground)]">
             Tables
           </h2>
-          {!usesDatabase && (
-            <span className="px-2 py-1 text-xs bg-[var(--teal-500)]/20 text-[var(--teal-400)] rounded-full">
-              Demo Mode
-            </span>
-          )}
         </div>
 
-        {/* Create Table Button - Only for database mode */}
-        {usesDatabase && seller && (
+        {/* Create Table Button */}
+        {seller && (
           <motion.div
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}

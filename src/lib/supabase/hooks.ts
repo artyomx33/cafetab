@@ -38,6 +38,82 @@ function getSupabase() {
   return createClient()
 }
 
+// ============================================
+// RESTAURANT HOOKS (Multi-tenant support)
+// ============================================
+
+export interface Restaurant {
+  id: string
+  slug: string
+  name: string
+  tagline: string | null
+  currency: string
+  currency_symbol: string
+  locale: string
+  theme_primary: string | null
+  theme_gradient: string | null
+  logo_url: string | null
+  created_at: string
+}
+
+export function useRestaurantBySlug(slug: string) {
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!slug) {
+      setLoading(false)
+      return
+    }
+
+    const fetchRestaurant = async () => {
+      const supabase = getSupabase()
+      const { data, error: err } = await supabase
+        .from('restaurants')
+        .select('*')
+        .eq('slug', slug)
+        .single()
+
+      if (err || !data) {
+        setError('Restaurant not found')
+        setLoading(false)
+        return
+      }
+
+      setRestaurant(data as Restaurant)
+      setError(null)
+      setLoading(false)
+    }
+
+    fetchRestaurant()
+  }, [slug])
+
+  return { restaurant, loading, error }
+}
+
+export function useAllRestaurants() {
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchRestaurants = async () => {
+      const supabase = getSupabase()
+      const { data } = await supabase
+        .from('restaurants')
+        .select('*')
+        .order('name')
+
+      setRestaurants(data || [])
+      setLoading(false)
+    }
+
+    fetchRestaurants()
+  }, [])
+
+  return { restaurants, loading }
+}
+
 // Seller hooks
 export function useVerifyPin() {
   const [loading, setLoading] = useState(false)
@@ -83,20 +159,54 @@ export function useVerifyPin() {
   return { verify, loading, error }
 }
 
+// Sellers hook with restaurant filtering
+export function useSellers(restaurantId?: string) {
+  const [sellers, setSellers] = useState<Seller[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    const supabase = getSupabase()
+    let query = supabase
+      .from('cafe_sellers')
+      .select('*')
+      .order('name', { ascending: true })
+
+    if (restaurantId) {
+      query = query.eq('restaurant_id', restaurantId)
+    }
+
+    const { data } = await query
+    setSellers(data || [])
+    setLoading(false)
+  }, [restaurantId])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { sellers, loading, refresh }
+}
+
 // Table hooks (replaces Groups)
-export function useTables() {
+export function useTables(restaurantId?: string) {
   const [tables, setTables] = useState<TableWithTab[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     const supabase = getSupabase()
-    const { data: tablesData } = await supabase
+    let query = supabase
       .from('cafe_tables')
       .select(`
         *,
         cafe_tabs!current_tab_id (*)
       `)
       .order('number', { ascending: true })
+
+    if (restaurantId) {
+      query = query.eq('restaurant_id', restaurantId)
+    }
+
+    const { data: tablesData } = await query
 
     if (tablesData) {
       const formatted = tablesData.map((t: any) => ({
@@ -235,57 +345,62 @@ export function useDeleteTable() {
 }
 
 // Categories & Products hooks
-export function useCategories() {
+export function useCategories(restaurantId?: string) {
   const [categories, setCategories] = useState<CategoryWithProductsType[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const fetchCategories = async () => {
-      const supabase = getSupabase()
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    const supabase = getSupabase()
 
-      // Fetch categories with products
-      const { data } = await supabase
-        .from('cafe_categories')
-        .select(`
-          *,
-          cafe_products (*)
-        `)
-        .eq('is_visible', true)
-        .order('sort_order')
+    // Fetch categories with products
+    let query = supabase
+      .from('cafe_categories')
+      .select(`
+        *,
+        cafe_products (*)
+      `)
+      .order('sort_order')
 
-      // Fetch product IDs that have modifier groups (for quick-add eligibility)
-      const { data: modifierLinks } = await supabase
-        .from('cafe_product_modifier_groups')
-        .select('product_id')
-
-      const productsWithModifiers = new Set(
-        (modifierLinks || []).map((link: { product_id: string }) => link.product_id)
-      )
-
-      if (data) {
-        const formatted = data.map((cat: any) => ({
-          id: cat.id,
-          name: cat.name,
-          sort_order: cat.sort_order,
-          is_visible: cat.is_visible,
-          created_at: cat.created_at,
-          products: (cat.cafe_products || [])
-            .filter((p: Product) => p.is_active)
-            .sort((a: Product, b: Product) => a.sort_order - b.sort_order)
-            .map((p: Product) => ({
-              ...p,
-              has_modifiers: productsWithModifiers.has(p.id)
-            }))
-        }))
-        setCategories(formatted)
-      }
-      setLoading(false)
+    if (restaurantId) {
+      query = query.eq('restaurant_id', restaurantId)
     }
 
-    fetchCategories()
-  }, [])
+    const { data } = await query
 
-  return { categories, loading }
+    // Fetch product IDs that have modifier groups (for quick-add eligibility)
+    const { data: modifierLinks } = await supabase
+      .from('cafe_product_modifier_groups')
+      .select('product_id')
+
+    const productsWithModifiers = new Set(
+      (modifierLinks || []).map((link: { product_id: string }) => link.product_id)
+    )
+
+    if (data) {
+      const formatted = data.map((cat: any) => ({
+        id: cat.id,
+        name: cat.name,
+        sort_order: cat.sort_order,
+        is_visible: cat.is_visible,
+        created_at: cat.created_at,
+        products: (cat.cafe_products || [])
+          .sort((a: Product, b: Product) => a.sort_order - b.sort_order)
+          .map((p: Product) => ({
+            ...p,
+            has_modifiers: productsWithModifiers.has(p.id)
+          }))
+      }))
+      setCategories(formatted)
+    }
+    setLoading(false)
+  }, [restaurantId])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  return { categories, loading, refresh }
 }
 
 // Tab hooks
@@ -1088,14 +1203,14 @@ export function useClientTab(tabId: string | null) {
 }
 
 // Hook to get categories with products for menu
-export function useClientMenu() {
+export function useClientMenu(restaurantId?: string) {
   const [categories, setCategories] = useState<CategoryWithProductsType[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchMenu = async () => {
       const supabase = getSupabase()
-      const { data } = await supabase
+      let query = supabase
         .from('cafe_categories')
         .select(`
           *,
@@ -1103,6 +1218,12 @@ export function useClientMenu() {
         `)
         .eq('is_visible', true)
         .order('sort_order')
+
+      if (restaurantId) {
+        query = query.eq('restaurant_id', restaurantId)
+      }
+
+      const { data } = await query
 
       // Fetch product IDs that have modifier groups (for quick-add eligibility)
       const { data: modifierLinks } = await supabase
@@ -1304,16 +1425,21 @@ export function useSendNotification() {
 }
 
 // Hook to get and update venue settings
-export function useVenueSettings() {
+export function useVenueSettings(restaurantId?: string) {
   const [settings, setSettings] = useState<VenueSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     const supabase = getSupabase()
-    const { data } = await supabase
+    let query = supabase
       .from('cafe_venue_settings')
       .select('*')
-      .single()
+
+    if (restaurantId) {
+      query = query.eq('restaurant_id', restaurantId)
+    }
+
+    const { data } = await query.single()
 
     setSettings(data as VenueSettings)
     setLoading(false)

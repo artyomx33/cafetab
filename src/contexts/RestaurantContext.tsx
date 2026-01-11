@@ -1,23 +1,17 @@
 'use client'
 
 import { createContext, useContext, ReactNode, useMemo } from 'react'
-import { RestaurantConfig, RestaurantCategory, RestaurantTable, RestaurantSeller } from '@/config/restaurants/types'
-import { getRestaurant, usesDatabase, DEFAULT_RESTAURANT } from '@/config/restaurants'
+import { useRestaurantBySlug, Restaurant } from '@/lib/supabase/hooks'
 
 interface RestaurantContextValue {
-  restaurant: RestaurantConfig
+  restaurant: Restaurant | null
+  restaurantId: string | null
   slug: string
-  usesDatabase: boolean
+  loading: boolean
+  error: string | null
 
   // Formatting helpers
   formatPrice: (price: number) => string
-
-  // Data getters (for demo mode)
-  getCategories: () => RestaurantCategory[]
-  getTables: () => RestaurantTable[]
-  getSellers: () => RestaurantSeller[]
-  getTableByQR: (qrCode: string) => RestaurantTable | undefined
-  getSellerByPin: (pin: string) => RestaurantSeller | undefined
 
   // URL helpers
   getBasePath: () => string
@@ -31,37 +25,28 @@ interface RestaurantProviderProps {
 }
 
 export function RestaurantProvider({ children, restaurantSlug }: RestaurantProviderProps) {
-  const restaurant = getRestaurant(restaurantSlug) || getRestaurant(DEFAULT_RESTAURANT)!
-  const isDatabase = usesDatabase(restaurantSlug)
+  const { restaurant, loading, error } = useRestaurantBySlug(restaurantSlug)
 
   const value = useMemo<RestaurantContextValue>(() => ({
     restaurant,
-    slug: restaurant.slug,
-    usesDatabase: isDatabase,
+    restaurantId: restaurant?.id || null,
+    slug: restaurantSlug,
+    loading,
+    error,
 
     formatPrice: (price: number) => {
-      return new Intl.NumberFormat(restaurant.locale, {
+      const locale = restaurant?.locale || 'en-US'
+      const currency = restaurant?.currency || 'USD'
+      return new Intl.NumberFormat(locale, {
         style: 'currency',
-        currency: restaurant.currency,
-        minimumFractionDigits: restaurant.currency === 'MXN' ? 0 : 2,
-        maximumFractionDigits: restaurant.currency === 'MXN' ? 0 : 2,
+        currency,
+        minimumFractionDigits: currency === 'MXN' ? 0 : 2,
+        maximumFractionDigits: currency === 'MXN' ? 0 : 2,
       }).format(price)
     },
 
-    getCategories: () => restaurant.categories,
-    getTables: () => restaurant.tables,
-    getSellers: () => restaurant.sellers,
-
-    getTableByQR: (qrCode: string) => {
-      return restaurant.tables.find(t => t.qr_code === qrCode)
-    },
-
-    getSellerByPin: (pin: string) => {
-      return restaurant.sellers.find(s => s.pin === pin)
-    },
-
-    getBasePath: () => `/${restaurant.slug}`,
-  }), [restaurant, isDatabase])
+    getBasePath: () => `/${restaurantSlug}`,
+  }), [restaurant, restaurantSlug, loading, error])
 
   return (
     <RestaurantContext.Provider value={value}>

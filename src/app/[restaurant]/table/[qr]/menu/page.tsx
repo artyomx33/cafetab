@@ -3,12 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTableByQR, useClientMenu, useCreateOrder } from '@/lib/supabase/hooks'
-import { useDemoStore } from '@/stores/demo-store'
 import { useRestaurant } from '@/contexts/RestaurantContext'
 import { useToast } from '@/components/ui/toast'
-import { motion, AnimatePresence } from 'motion/react'
-import { ArrowLeft, ShoppingCart, Plus, Minus, X, Flame, Star, Leaf } from 'lucide-react'
-import type { Product, CartItem } from '@/types'
+import { motion } from 'motion/react'
+import { ArrowLeft, ShoppingCart, Plus, Minus, X } from 'lucide-react'
 
 // Category emoji mapping
 const categoryEmojis: Record<string, string> = {
@@ -49,7 +47,7 @@ function getCategoryEmoji(name: string): string {
   return categoryEmojis[key] || categoryEmojis['default']
 }
 
-// Simple cart item for demo
+// Simple cart item
 interface SimpleCartItem {
   product: { id: string; name: string; price: number; description?: string }
   quantity: number
@@ -61,49 +59,31 @@ export default function MenuBrowser() {
   const router = useRouter()
   const toast = useToast()
   const qrCode = params.qr as string
-  const restaurantSlug = params.restaurant as string
 
-  const { restaurant, slug, usesDatabase, formatPrice, getCategories, getTables } = useRestaurant()
+  const { restaurant, restaurantId, slug, formatPrice, loading: restaurantLoading } = useRestaurant()
 
-  // Database mode hooks
-  const { table: dbTable, tab: dbTab } = useTableByQR(usesDatabase ? qrCode : '')
-  const { categories: dbCategories, loading: dbLoading } = useClientMenu()
-  const { createOrder, loading: submitting } = useCreateOrder(dbTab?.id || null)
-
-  // Demo mode store
-  const { tables: demoTables, initializeRestaurant, addToTab, createOrder: createDemoOrder } = useDemoStore()
+  // Database hooks
+  const { table, tab } = useTableByQR(qrCode)
+  const { categories: dbCategories, loading: menuLoading } = useClientMenu(restaurantId || undefined)
+  const { createOrder, loading: submitting } = useCreateOrder(tab?.id || null)
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<SimpleCartItem[]>([])
   const [showCart, setShowCart] = useState(false)
 
-  // Initialize demo store
-  useEffect(() => {
-    if (!usesDatabase) {
-      initializeRestaurant(slug, getTables())
-    }
-  }, [usesDatabase, slug, getTables, initializeRestaurant])
+  // Map categories to simpler format
+  const categories = dbCategories.map(c => ({
+    id: c.id,
+    name: c.name,
+    products: c.products.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      description: p.description || undefined,
+    })),
+  }))
 
-  // Get data based on mode
-  const demoTable = !usesDatabase ? demoTables.find(t => t.qr_code === qrCode) : null
-  const table = usesDatabase ? dbTable : demoTable
-  const tab = usesDatabase ? dbTab : demoTable?.current_tab
-
-  // Get categories - from database or from restaurant config
-  const categories = usesDatabase
-    ? dbCategories.map(c => ({
-        id: c.id,
-        name: c.name,
-        products: c.products.map(p => ({
-          id: p.id,
-          name: p.name,
-          price: p.price,
-          description: p.description || undefined,
-        })),
-      }))
-    : getCategories()
-
-  const loading = usesDatabase ? dbLoading : false
+  const loading = restaurantLoading || menuLoading
 
   // Set first category as selected when loaded
   useEffect(() => {
@@ -113,18 +93,15 @@ export default function MenuBrowser() {
   }, [categories, selectedCategory])
 
   const handleAddToCart = (product: { id: string; name: string; price: number; description?: string }) => {
-    // Check if item already in cart
     const existingIndex = cart.findIndex(item => item.product.id === product.id)
 
     if (existingIndex >= 0) {
-      // Update quantity
       setCart(cart.map((item, i) =>
         i === existingIndex
           ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.product.price }
           : item
       ))
     } else {
-      // Add new item
       setCart([...cart, {
         product,
         quantity: 1,
@@ -162,40 +139,19 @@ export default function MenuBrowser() {
       return
     }
 
-    if (usesDatabase) {
-      try {
-        await createOrder(cart.map(item => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          unit_price: item.product.price,
-        })))
+    try {
+      await createOrder(cart.map(item => ({
+        product_id: item.product.id,
+        quantity: item.quantity,
+        unit_price: item.product.price,
+      })))
 
-        toast.success('Order sent to kitchen!')
-        setCart([])
-        setShowCart(false)
-        router.push(`/${slug}/table/${qrCode}`)
-      } catch {
-        toast.error('Failed to submit order. Please try again.')
-      }
-    } else {
-      // Demo mode
-      cart.forEach(item => {
-        addToTab(tab.id, item.product as any, item.quantity)
-      })
-
-      createDemoOrder(
-        tab.id,
-        table?.number || '?',
-        cart.map(item => ({
-          product: item.product as any,
-          quantity: item.quantity,
-        }))
-      )
-
-      toast.success('Order sent! (Demo mode)')
+      toast.success('Order sent to kitchen!')
       setCart([])
       setShowCart(false)
       router.push(`/${slug}/table/${qrCode}`)
+    } catch {
+      toast.error('Failed to submit order. Please try again.')
     }
   }
 
@@ -224,7 +180,7 @@ export default function MenuBrowser() {
             <ArrowLeft size={24} className="text-[#3E2723]" />
           </button>
           <div className="text-center">
-            <h1 className="text-xl font-bold text-[#3E2723]">{restaurant.name}</h1>
+            <h1 className="text-xl font-bold text-[#3E2723]">{restaurant?.name || slug}</h1>
             {table && <p className="text-sm text-gray-600">Table {table.number}</p>}
           </div>
           <button

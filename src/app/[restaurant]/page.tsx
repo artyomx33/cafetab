@@ -6,10 +6,12 @@ import { motion } from 'motion/react'
 import { QrCode, Users, CreditCard } from 'lucide-react'
 import Link from 'next/link'
 import { useRestaurant } from '@/contexts/RestaurantContext'
+import { useTables } from '@/lib/supabase/hooks'
 
 export default function RestaurantHome() {
   const router = useRouter()
-  const { restaurant, slug, formatPrice, usesDatabase } = useRestaurant()
+  const { restaurant, restaurantId, slug, loading: restaurantLoading } = useRestaurant()
+  const { tables, loading: tablesLoading } = useTables(restaurantId || undefined)
   const [qrCode, setQrCode] = useState('')
 
   const handleQRSubmit = (e: React.FormEvent) => {
@@ -19,9 +21,17 @@ export default function RestaurantHome() {
     }
   }
 
+  if (restaurantLoading || tablesLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+        <div className="text-[var(--muted-foreground)]">Loading...</div>
+      </div>
+    )
+  }
+
   // Dynamic styling based on restaurant theme
   const primaryStyle = {
-    '--restaurant-primary': restaurant.theme.primary,
+    '--restaurant-primary': restaurant?.theme_primary || '#14b8a6',
   } as React.CSSProperties
 
   return (
@@ -44,17 +54,12 @@ export default function RestaurantHome() {
           transition={{ delay: 0.1 }}
         >
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">
-            {restaurant.name}
+            {restaurant?.name || slug}
           </h1>
-          {restaurant.tagline && (
+          {restaurant?.tagline && (
             <p className="text-lg text-[var(--muted-foreground)]">
               {restaurant.tagline}
             </p>
-          )}
-          {!usesDatabase && (
-            <span className="inline-block mt-3 px-3 py-1 text-xs bg-[var(--teal-500)]/20 text-[var(--teal-400)] rounded-full">
-              Demo Mode
-            </span>
           )}
         </motion.div>
 
@@ -74,7 +79,7 @@ export default function RestaurantHome() {
               type="text"
               value={qrCode}
               onChange={(e) => setQrCode(e.target.value.toUpperCase())}
-              placeholder={usesDatabase ? 'CT-XXXXXXXX' : `${slug.toUpperCase()}-01`}
+              placeholder="CT-XXXXXXXX"
               className="flex-1 px-4 py-3 rounded-lg bg-[var(--muted)] border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] text-center font-mono text-lg"
             />
             <button
@@ -89,12 +94,12 @@ export default function RestaurantHome() {
             Scan the QR code at your table or enter the code manually
           </p>
 
-          {/* Quick table links for demo */}
-          {!usesDatabase && restaurant.tables.length > 0 && (
+          {/* Quick table links */}
+          {tables.length > 0 && (
             <div className="mt-4 pt-4 border-t border-[var(--border)]">
-              <p className="text-xs text-[var(--muted-foreground)] mb-2 text-center">Quick demo tables:</p>
+              <p className="text-xs text-[var(--muted-foreground)] mb-2 text-center">Quick access:</p>
               <div className="flex flex-wrap justify-center gap-2">
-                {restaurant.tables.slice(0, 4).map((table) => (
+                {tables.slice(0, 4).map((table) => (
                   <Link
                     key={table.id}
                     href={`/${slug}/table/${table.qr_code}`}

@@ -6,9 +6,9 @@ import { motion } from 'motion/react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui'
 import { useSellerStore } from '@/stores/seller-store'
-import { useDemoStore } from '@/stores/demo-store'
 import { useRestaurant } from '@/contexts/RestaurantContext'
 import { useToast } from '@/components/ui/toast'
+import { useTableById, useTabByTableId, useCategories, useCreateOrder, useMarkTabPaid } from '@/lib/supabase/hooks'
 import { ArrowLeft, Plus, Minus, ShoppingCart, Receipt, CheckCircle } from 'lucide-react'
 
 export default function TableTabPage() {
@@ -17,28 +17,24 @@ export default function TableTabPage() {
   const toast = useToast()
   const tableId = params.tableId as string
 
-  const { restaurant, slug, usesDatabase, formatPrice, getCategories, getTables } = useRestaurant()
+  const { restaurant, restaurantId, slug, formatPrice, loading: restaurantLoading } = useRestaurant()
   const { isLoggedIn } = useSellerStore()
 
-  // Demo mode store
-  const { tables: demoTables, initializeRestaurant, addToTab, closeTab: demoCloseTab } = useDemoStore()
+  // Database hooks
+  const { table, loading: tableLoading } = useTableById(tableId)
+  const { tab, loading: tabLoading, refresh: refreshTab } = useTabByTableId(tableId)
+  const { categories, loading: categoriesLoading } = useCategories(restaurantId || undefined)
+  const { createOrder, loading: submittingOrder } = useCreateOrder(tab?.id || null)
+  const { markTabPaid, loading: markingPaid } = useMarkTabPaid()
+
+  // Get tab items from the tab object
+  const tabItems = tab?.tab_items || []
 
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<{ id: string; name: string; price: number; quantity: number }[]>([])
   const [showTabView, setShowTabView] = useState(false)
 
-  // Initialize demo store
-  useEffect(() => {
-    if (!usesDatabase) {
-      initializeRestaurant(slug, getTables())
-    }
-  }, [usesDatabase, slug, getTables, initializeRestaurant])
-
-  // Get data
-  const demoTable = !usesDatabase ? demoTables.find(t => t.id === tableId) : null
-  const table = demoTable
-  const tab = demoTable?.current_tab
-  const categories = getCategories()
+  const isLoading = restaurantLoading || tableLoading || tabLoading || categoriesLoading
 
   // Expand first category by default
   useEffect(() => {
@@ -49,25 +45,27 @@ export default function TableTabPage() {
 
   // Redirect if not logged in
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (!isLoading && !isLoggedIn) {
       router.push(`/${slug}/seller`)
     }
-  }, [isLoggedIn, router, slug])
+  }, [isLoggedIn, router, slug, isLoading])
 
   // Redirect if no tab
   useEffect(() => {
-    if (!usesDatabase && table && !tab) {
+    if (!isLoading && table && !tab) {
       router.push(`/${slug}/seller/tables/${tableId}`)
     }
-  }, [tab, table, tableId, router, slug, usesDatabase])
+  }, [tab, table, tableId, router, slug, isLoading])
 
-  if (usesDatabase) {
-    // For database mode, redirect to the original page
-    router.push(`/seller/tables/${tableId}/tab`)
-    return null
+  if (!isLoggedIn || isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <p className="text-[var(--muted-foreground)]">Loading...</p>
+      </div>
+    )
   }
 
-  if (!isLoggedIn || !tab) {
+  if (!tab) {
     return null
   }
 
@@ -96,21 +94,32 @@ export default function TableTabPage() {
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0)
 
-  const handleSendToTab = () => {
+  const handleSendToTab = async () => {
     if (cart.length === 0) return
 
-    cart.forEach(item => {
-      addToTab(tab.id, { id: item.id, name: item.name, price: item.price } as any, item.quantity)
-    })
+    try {
+      await createOrder(cart.map(item => ({
+        product_id: item.id,
+        quantity: item.quantity,
+        unit_price: item.price,
+      })))
 
-    toast.success('Items added to tab!')
-    setCart([])
+      toast.success('Items added to tab!')
+      setCart([])
+      refreshTab()
+    } catch {
+      toast.error('Failed to add items. Please try again.')
+    }
   }
 
-  const handleCloseTab = () => {
-    demoCloseTab(tab.id)
-    toast.success('Tab closed!')
-    router.push(`/${slug}/seller/tables`)
+  const handleCloseTab = async () => {
+    try {
+      await markTabPaid(tab.id)
+      toast.success('Tab closed!')
+      router.push(`/${slug}/seller/tables`)
+    } catch {
+      toast.error('Failed to close tab. Please try again.')
+    }
   }
 
   return (
@@ -134,7 +143,7 @@ export default function TableTabPage() {
               Table {table?.number}
             </h2>
             <p className="text-sm text-[var(--muted-foreground)]">
-              {restaurant.name}
+              {restaurant?.name || slug}
             </p>
           </div>
           <Button
@@ -155,7 +164,7 @@ export default function TableTabPage() {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-sm text-[var(--muted-foreground)]">{tab.items.length} items</p>
+            <p className="text-sm text-[var(--muted-foreground)]">{tabItems.length} items</p>
           </div>
         </div>
       </motion.div>
@@ -172,18 +181,18 @@ export default function TableTabPage() {
               </div>
             </div>
 
-            {tab.items.length === 0 ? (
+            {tabItems.length === 0 ? (
               <div className="p-8 text-center text-[var(--muted-foreground)]">
                 No items yet
               </div>
             ) : (
               <div className="divide-y divide-[var(--card-border)]">
-                {tab.items.map((item, index) => (
+                {tabItems.map((item) => (
                   <div key={item.id} className="p-4 flex justify-between items-center">
                     <div>
-                      <p className="font-medium">{item.product.name}</p>
+                      <p className="font-medium">{item.product?.name || 'Unknown'}</p>
                       <p className="text-sm text-[var(--muted-foreground)]">
-                        {formatPrice(item.unit_price)} × {item.quantity}
+                        {formatPrice(item.unit_price)} x {item.quantity}
                       </p>
                     </div>
                     <p className="font-semibold text-gradient-gold">
@@ -197,12 +206,12 @@ export default function TableTabPage() {
 
           <Button
             onClick={handleCloseTab}
-            disabled={tab.items.length === 0}
+            disabled={tabItems.length === 0 || markingPaid}
             className="w-full"
             size="large"
           >
             <CheckCircle className="w-5 h-5 mr-2" />
-            Close Tab
+            {markingPaid ? 'Closing...' : 'Close Tab'}
           </Button>
         </div>
       ) : (
@@ -289,9 +298,14 @@ export default function TableTabPage() {
             ))}
           </div>
 
-          <Button onClick={handleSendToTab} className="w-full" size="large">
+          <Button
+            onClick={handleSendToTab}
+            disabled={submittingOrder}
+            className="w-full"
+            size="large"
+          >
             <ShoppingCart className="w-5 h-5 mr-2" />
-            Add to Tab
+            {submittingOrder ? 'Adding...' : 'Add to Tab'}
           </Button>
         </motion.div>
       )}

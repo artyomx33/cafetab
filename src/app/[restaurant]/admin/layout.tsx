@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useRestaurant } from '@/contexts/RestaurantContext'
-import { LayoutDashboard, Package, Users, Settings, UtensilsCrossed } from 'lucide-react'
+import { LayoutDashboard, Package, Users, Settings, UtensilsCrossed, ChefHat, CreditCard } from 'lucide-react'
 
 export default function AdminLayout({
   children,
@@ -11,15 +11,25 @@ export default function AdminLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  const { restaurant, slug, usesDatabase } = useRestaurant()
+  const { restaurant, slug, loading } = useRestaurant()
 
   const navItems = [
     { href: `/${slug}/admin`, label: 'Dashboard', icon: LayoutDashboard },
+    { href: `/${slug}/admin/kitchen`, label: 'Kitchen', icon: ChefHat },
     { href: `/${slug}/admin/products`, label: 'Products', icon: Package },
     { href: `/${slug}/admin/tables`, label: 'Tables', icon: UtensilsCrossed },
+    { href: `/${slug}/admin/payments`, label: 'Payments', icon: CreditCard },
     { href: `/${slug}/admin/sellers`, label: 'Staff', icon: Users },
     { href: `/${slug}/admin/settings`, label: 'Settings', icon: Settings },
   ]
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+        <div className="text-[var(--muted-foreground)]">Loading...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen flex bg-[var(--background)]">
@@ -28,17 +38,12 @@ export default function AdminLayout({
         {/* Logo */}
         <div className="p-6 border-b border-[var(--card-border)]">
           <Link href={`/${slug}`} className="flex items-center gap-2">
-            <span className="text-2xl">🫏</span>
+            <span className="text-2xl">{slug === 'burro' ? '🫏' : '🌙'}</span>
             <div>
-              <h1 className="font-bold text-lg">{restaurant.name}</h1>
+              <h1 className="font-bold text-lg">{restaurant?.name || slug}</h1>
               <p className="text-xs text-[var(--muted-foreground)]">Admin Panel</p>
             </div>
           </Link>
-          {!usesDatabase && (
-            <span className="inline-block mt-2 px-2 py-1 text-xs bg-[var(--teal-500)]/20 text-[var(--teal-400)] rounded-full">
-              Demo Mode
-            </span>
-          )}
         </div>
 
         {/* Navigation */}

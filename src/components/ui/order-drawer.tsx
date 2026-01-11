@@ -20,6 +20,7 @@ export interface OrderDrawerProps {
   onClose: () => void;
   onBack: () => void;
   onOrderComplete: () => void;
+  restaurantId?: string;
 }
 
 export const OrderDrawer = ({
@@ -30,9 +31,10 @@ export const OrderDrawer = ({
   onClose,
   onBack,
   onOrderComplete,
+  restaurantId,
 }: OrderDrawerProps) => {
   const toast = useToast();
-  const { categories, loading: categoriesLoading } = useCategories();
+  const { categories, loading: categoriesLoading } = useCategories(restaurantId);
   const { createOrder } = useCreateOrder(tab?.id || null);
   const { items, addItemWithModifiers, removeItem, clearCart, getTotal, getItemCount } = useCartStore();
 

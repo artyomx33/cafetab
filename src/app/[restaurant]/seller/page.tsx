@@ -12,7 +12,7 @@ import { useRestaurant } from '@/contexts/RestaurantContext'
 
 export default function SellerLoginPage() {
   const router = useRouter()
-  const { restaurant, slug, usesDatabase, getSellerByPin } = useRestaurant()
+  const { slug } = useRestaurant()
   const { login, stayLoggedIn, setStayLoggedIn } = useSellerStore()
   const { verify, loading, error: verifyError } = useVerifyPin()
 
@@ -24,36 +24,14 @@ export default function SellerLoginPage() {
     setError('')
     setIsLoading(true)
 
-    if (usesDatabase) {
-      // Luna - use Supabase
-      const seller = await verify(completedPin)
+    const seller = await verify(completedPin)
 
-      if (seller) {
-        login(seller)
-        router.push(`/${slug}/seller/tables`)
-      } else {
-        setError(verifyError || 'Invalid PIN')
-        setPin('')
-      }
+    if (seller) {
+      login(seller)
+      router.push(`/${slug}/seller/tables`)
     } else {
-      // Demo mode - use in-memory config
-      const demoSeller = getSellerByPin(completedPin)
-
-      if (demoSeller) {
-        // Convert to Seller type for the store
-        login({
-          id: demoSeller.id,
-          name: demoSeller.name,
-          pin_hash: completedPin,
-          avatar_url: demoSeller.avatar_url || null,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        })
-        router.push(`/${slug}/seller/tables`)
-      } else {
-        setError('Invalid PIN')
-        setPin('')
-      }
+      setError(verifyError || 'Invalid PIN')
+      setPin('')
     }
 
     setIsLoading(false)
@@ -89,11 +67,6 @@ export default function SellerLoginPage() {
           <p className="text-[var(--muted-foreground)]">
             Enter your 4-digit PIN to continue
           </p>
-          {!usesDatabase && (
-            <p className="text-xs text-[var(--teal-400)] mt-2">
-              Demo PINs: 1234 (Admin), 1111, 2222
-            </p>
-          )}
         </motion.div>
 
         {/* PIN Input */}
