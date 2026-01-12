@@ -27,7 +27,15 @@ import type {
   ModifierGroupWithModifiers,
   ProductWithModifiers,
   OrderItemModifier,
-  TabItemModifier
+  TabItemModifier,
+  Promotion,
+  PromotionWithDetails,
+  PromotionTarget,
+  PromotionSchedule,
+  ActivePromotion,
+  PromotionType,
+  PromotionScope,
+  PromotionScheduleType
 } from '@/types'
 
 // Re-export types from @/types
