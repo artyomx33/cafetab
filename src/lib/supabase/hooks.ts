@@ -216,6 +216,7 @@ export function useTables(restaurantId?: string) {
         status: t.status,
         section: t.section,
         current_tab_id: t.current_tab_id,
+        restaurant_id: t.restaurant_id,
         created_at: t.created_at,
         current_tab: t.cafe_tabs || null
       }))

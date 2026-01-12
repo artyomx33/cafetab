@@ -49,7 +49,8 @@ export default function MenuBrowser() {
   const toast = useToast()
   const qrCode = params.qr as string
   const { table, tab } = useTableByQR(qrCode)
-  const { categories, loading } = useClientMenu()
+  // Use table's restaurant_id to filter menu (multi-tenant support)
+  const { categories, loading } = useClientMenu(table?.restaurant_id || undefined)
   const { createOrder, loading: submitting } = useCreateOrder(tab?.id || null)
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)

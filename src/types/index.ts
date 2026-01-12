@@ -140,6 +140,7 @@ export interface Table {
   status: TableStatus
   section: string | null
   current_tab_id: string | null
+  restaurant_id: string
   created_at: string
 }
 
