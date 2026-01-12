@@ -9,6 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useSellerStore } from "@/stores/seller-store";
 import { useVerifyPin } from "@/lib/supabase/hooks";
 
+// Legacy route - hardcoded to Luna for backwards compatibility
+const LUNA_RESTAURANT_ID = 'c0000000-0000-0000-0000-000000000001';
+
 export default function SellerLoginPage() {
   const router = useRouter();
   const { login, stayLoggedIn, setStayLoggedIn } = useSellerStore();
@@ -20,7 +23,7 @@ export default function SellerLoginPage() {
   const handlePinComplete = async (completedPin: string) => {
     setError("");
 
-    const seller = await verify(completedPin);
+    const seller = await verify(LUNA_RESTAURANT_ID, completedPin);
 
     if (seller) {
       login(seller);

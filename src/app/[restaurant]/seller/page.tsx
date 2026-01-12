@@ -12,7 +12,7 @@ import { useRestaurant } from '@/contexts/RestaurantContext'
 
 export default function SellerLoginPage() {
   const router = useRouter()
-  const { slug } = useRestaurant()
+  const { slug, restaurantId } = useRestaurant()
   const { login, stayLoggedIn, setStayLoggedIn } = useSellerStore()
   const { verify, loading, error: verifyError } = useVerifyPin()
 
@@ -24,7 +24,7 @@ export default function SellerLoginPage() {
     setError('')
     setIsLoading(true)
 
-    const seller = await verify(completedPin)
+    const seller = await verify(restaurantId || '', completedPin)
 
     if (seller) {
       login(seller)

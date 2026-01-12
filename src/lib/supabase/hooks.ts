@@ -119,7 +119,7 @@ export function useVerifyPin() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const verify = useCallback(async (pin: string): Promise<Seller | null> => {
+  const verify = useCallback(async (restaurantId: string, pin: string): Promise<Seller | null> => {
     setLoading(true)
     setError(null)
 
@@ -128,6 +128,7 @@ export function useVerifyPin() {
     let { data, error: err } = await supabase
       .from('cafe_sellers')
       .select('*')
+      .eq('restaurant_id', restaurantId)
       .eq('pin_hash', pin)
       .eq('is_active', true)
       .single()
@@ -138,6 +139,7 @@ export function useVerifyPin() {
       const result = await supabase
         .from('cafe_sellers')
         .select('*')
+        .eq('restaurant_id', restaurantId)
         .eq('pin_hash', pinHash)
         .eq('is_active', true)
         .single()
@@ -530,7 +532,7 @@ export function useTab(tableId: string) {
 }
 
 // Admin hooks
-export function useDashboardStats() {
+export function useDashboardStats(restaurantId: string) {
   const [stats, setStats] = useState({ totalSales: 0, totalTables: 0, occupiedTables: 0, openTabs: 0 })
   const [leaderboard, setLeaderboard] = useState<{ id: string; name: string; itemsSold: number; totalSales: number }[]>([])
   const [activity, setActivity] = useState<{ id: string; productName: string; quantity: number; total: number; sellerName: string; tableName: string; createdAt: string }[]>([])
@@ -542,40 +544,59 @@ export function useDashboardStats() {
     const { count: totalTables } = await supabase
       .from('cafe_tables')
       .select('*', { count: 'exact', head: true })
+      .eq('restaurant_id', restaurantId)
 
     const { count: occupiedTables } = await supabase
       .from('cafe_tables')
       .select('*', { count: 'exact', head: true })
+      .eq('restaurant_id', restaurantId)
       .eq('status', 'occupied')
 
-    // Get open tabs count
-    const { count: openTabs } = await supabase
-      .from('cafe_tabs')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'open')
+    // Get open tabs count (filter via tables join)
+    const { data: restaurantTables } = await supabase
+      .from('cafe_tables')
+      .select('id')
+      .eq('restaurant_id', restaurantId)
 
-    // Get today's revenue (paid tabs from today)
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const { data: todayTabs } = await supabase
-      .from('cafe_tabs')
-      .select('total')
-      .eq('status', 'paid')
-      .gte('paid_at', today.toISOString())
+    const tableIds = restaurantTables?.map(t => t.id) || []
 
-    const totalSales = todayTabs?.reduce((sum, t) => sum + Number(t.total), 0) || 0
+    let openTabs = 0
+    let totalSales = 0
+
+    if (tableIds.length > 0) {
+      const { count } = await supabase
+        .from('cafe_tabs')
+        .select('*', { count: 'exact', head: true })
+        .in('table_id', tableIds)
+        .eq('status', 'open')
+
+      openTabs = count || 0
+
+      // Get today's revenue (paid tabs from today)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const { data: todayTabs } = await supabase
+        .from('cafe_tabs')
+        .select('total')
+        .in('table_id', tableIds)
+        .eq('status', 'paid')
+        .gte('paid_at', today.toISOString())
+
+      totalSales = todayTabs?.reduce((sum, t) => sum + Number(t.total), 0) || 0
+    }
 
     setStats({
       totalSales,
       totalTables: totalTables || 0,
       occupiedTables: occupiedTables || 0,
-      openTabs: openTabs || 0
+      openTabs
     })
 
     // Get seller leaderboard
     const { data: sellers } = await supabase
       .from('cafe_sellers')
       .select('id, name')
+      .eq('restaurant_id', restaurantId)
       .eq('is_active', true)
 
     if (sellers) {
@@ -600,7 +621,7 @@ export function useDashboardStats() {
       setLeaderboard(sellerStats.sort((a, b) => b.totalSales - a.totalSales))
     }
 
-    // Get recent activity
+    // Get recent activity (filter via nested tables join)
     const { data: recentItems } = await supabase
       .from('cafe_tab_items')
       .select(`
@@ -610,8 +631,11 @@ export function useDashboardStats() {
         created_at,
         cafe_products (name),
         cafe_sellers (name),
-        cafe_tabs (cafe_tables (number))
+        cafe_tabs!inner (
+          cafe_tables!inner (number, restaurant_id)
+        )
       `)
+      .eq('cafe_tabs.cafe_tables.restaurant_id', restaurantId)
       .order('created_at', { ascending: false })
       .limit(10)
 
@@ -630,7 +654,7 @@ export function useDashboardStats() {
     }
 
     setLoading(false)
-  }, [])
+  }, [restaurantId])
 
   useEffect(() => {
     refresh()
@@ -639,7 +663,7 @@ export function useDashboardStats() {
   return { stats, leaderboard, activity, loading, refresh }
 }
 
-export function useAllTables() {
+export function useAllTables(restaurantId: string) {
   const [tables, setTables] = useState<(Table & { total: number })[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -651,6 +675,7 @@ export function useAllTables() {
         *,
         cafe_tabs (total)
       `)
+      .eq('restaurant_id', restaurantId)
       .order('created_at', { ascending: false })
 
     if (data) {
@@ -662,7 +687,7 @@ export function useAllTables() {
       setTables(tablesWithTotal)
     }
     setLoading(false)
-  }, [])
+  }, [restaurantId])
 
   useEffect(() => {
     refresh()
@@ -671,7 +696,7 @@ export function useAllTables() {
   return { tables, loading, refresh }
 }
 
-export function useAllProducts() {
+export function useAllProducts(restaurantId: string) {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
@@ -681,17 +706,19 @@ export function useAllProducts() {
     const { data: productsData } = await supabase
       .from('cafe_products')
       .select('*')
+      .eq('restaurant_id', restaurantId)
       .order('sort_order')
 
     const { data: categoriesData } = await supabase
       .from('cafe_categories')
       .select('*')
+      .eq('restaurant_id', restaurantId)
       .order('sort_order')
 
     setProducts(productsData || [])
     setCategories(categoriesData || [])
     setLoading(false)
-  }, [])
+  }, [restaurantId])
 
   useEffect(() => {
     refresh()
@@ -759,7 +786,7 @@ export function useAllProducts() {
   return { products, categories, loading, refresh, createProduct, updateProduct, deleteProduct, createCategory }
 }
 
-export function useAllSellers() {
+export function useAllSellers(restaurantId: string) {
   const [sellers, setSellers] = useState<(Seller & { totalSales: number; itemsSold: number })[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -768,6 +795,7 @@ export function useAllSellers() {
     const { data: sellersData } = await supabase
       .from('cafe_sellers')
       .select('*')
+      .eq('restaurant_id', restaurantId)
       .order('created_at', { ascending: false })
 
     if (sellersData) {
@@ -1475,7 +1503,7 @@ export function useVenueSettings(restaurantId?: string) {
 // ORDER HOOKS (for kitchen display)
 // ============================================
 
-export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled') {
+export function useOrders(restaurantId: string, status?: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled') {
   const [orders, setOrders] = useState<OrderWithItems[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -1489,10 +1517,11 @@ export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' 
           *,
           cafe_products (*)
         ),
-        cafe_tabs (
-          cafe_tables (number)
+        cafe_tabs!inner (
+          cafe_tables!inner (number, restaurant_id)
         )
       `)
+      .eq('cafe_tabs.cafe_tables.restaurant_id', restaurantId)
       .order('created_at', { ascending: false })
 
     if (status) {
@@ -1527,7 +1556,7 @@ export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' 
       setOrders(formatted)
     }
     setLoading(false)
-  }, [status])
+  }, [restaurantId, status])
 
   useEffect(() => {
     refresh()
@@ -1604,7 +1633,7 @@ export function useOrders(status?: 'pending' | 'preparing' | 'ready' | 'served' 
 // NOTIFICATION HOOKS
 // ============================================
 
-export function useNotifications(sellerId?: string) {
+export function useNotifications(restaurantId: string, sellerId?: string) {
   const [notifications, setNotifications] = useState<NotificationWithTable[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -1614,8 +1643,9 @@ export function useNotifications(sellerId?: string) {
       .from('cafe_notifications')
       .select(`
         *,
-        cafe_tables (*)
+        cafe_tables!inner (*)
       `)
+      .eq('cafe_tables.restaurant_id', restaurantId)
       .order('created_at', { ascending: false })
       .limit(50)
 
@@ -1639,7 +1669,7 @@ export function useNotifications(sellerId?: string) {
       setNotifications(formatted)
     }
     setLoading(false)
-  }, [sellerId])
+  }, [restaurantId, sellerId])
 
   useEffect(() => {
     refresh()
@@ -1756,18 +1786,44 @@ export function useProductWithModifiers(productId: string) {
 }
 
 // Hook to fetch all modifier groups with their modifiers
-export function useModifierGroups() {
+export function useModifierGroups(restaurantId: string) {
   const [modifierGroups, setModifierGroups] = useState<ModifierGroupWithModifiers[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    if (!restaurantId) {
+      setModifierGroups([])
+      setLoading(false)
+      return
+    }
+
     const supabase = getSupabase()
+
+    // Modifier groups don't have restaurant_id directly.
+    // Filter by finding groups linked to products belonging to this restaurant.
+    const { data: productModifierGroups } = await supabase
+      .from('cafe_product_modifier_groups')
+      .select(`
+        modifier_group_id,
+        cafe_products!inner (restaurant_id)
+      `)
+      .eq('cafe_products.restaurant_id', restaurantId)
+
+    const groupIds = [...new Set((productModifierGroups || []).map(pmg => pmg.modifier_group_id))]
+
+    if (groupIds.length === 0) {
+      setModifierGroups([])
+      setLoading(false)
+      return
+    }
+
     const { data } = await supabase
       .from('cafe_modifier_groups')
       .select(`
         *,
         cafe_modifiers (*)
       `)
+      .in('id', groupIds)
       .order('sort_order')
 
     if (data) {
@@ -1787,7 +1843,7 @@ export function useModifierGroups() {
       setModifierGroups(formatted)
     }
     setLoading(false)
-  }, [])
+  }, [restaurantId])
 
   useEffect(() => {
     refresh()
@@ -1978,33 +2034,41 @@ export function useTabTransactions(tabId: string | null) {
 }
 
 // Hook to get payment history with filters
-export function usePaymentHistory(filters?: {
+export function usePaymentHistory(restaurantId: string, filters?: {
   date_from?: string
   date_to?: string
   payment_method?: 'card' | 'cash' | null
   seller_id?: string | null
 }) {
   const [payments, setPayments] = useState<(Transaction & {
-    tab?: { total: number; table?: { number: string } }
+    tab?: { total: number; table?: { number: string; restaurant_id?: string } }
     seller?: { name: string }
   })[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    if (!restaurantId) {
+      setPayments([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     const supabase = getSupabase()
 
+    // Filter transactions through tab -> table -> restaurant_id
     let query = supabase
       .from('cafe_transactions')
       .select(`
         *,
         tab:cafe_tabs!tab_id (
           total,
-          table:cafe_tables!table_id (number)
+          table:cafe_tables!table_id!inner (number, restaurant_id)
         ),
         seller:cafe_sellers!processed_by (name)
       `)
       .eq('type', 'payment')
+      .eq('tab.table.restaurant_id', restaurantId)
       .order('created_at', { ascending: false })
 
     if (filters?.date_from) {
@@ -2023,7 +2087,7 @@ export function usePaymentHistory(filters?: {
     const { data } = await query.limit(100)
     setPayments(data || [])
     setLoading(false)
-  }, [filters?.date_from, filters?.date_to, filters?.payment_method, filters?.seller_id])
+  }, [restaurantId, filters?.date_from, filters?.date_to, filters?.payment_method, filters?.seller_id])
 
   useEffect(() => {
     refresh()
@@ -2033,7 +2097,7 @@ export function usePaymentHistory(filters?: {
 }
 
 // Hook to get daily payment stats
-export function useDailyPaymentStats(date?: string) {
+export function useDailyPaymentStats(restaurantId: string, date?: string) {
   const [stats, setStats] = useState<{
     totalRevenue: number
     cashTotal: number
@@ -2052,6 +2116,19 @@ export function useDailyPaymentStats(date?: string) {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    if (!restaurantId) {
+      setStats({
+        totalRevenue: 0,
+        cashTotal: 0,
+        cardTotal: 0,
+        tipsTotal: 0,
+        paymentCount: 0,
+        sellerStats: []
+      })
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     const supabase = getSupabase()
 
@@ -2060,13 +2137,18 @@ export function useDailyPaymentStats(date?: string) {
     const startOfDay = `${targetDate}T00:00:00`
     const endOfDay = `${targetDate}T23:59:59`
 
+    // Filter transactions through tab -> table -> restaurant_id
     const { data: payments } = await supabase
       .from('cafe_transactions')
       .select(`
         *,
-        seller:cafe_sellers!processed_by (id, name)
+        seller:cafe_sellers!processed_by (id, name),
+        tab:cafe_tabs!tab_id (
+          table:cafe_tables!table_id!inner (restaurant_id)
+        )
       `)
       .eq('type', 'payment')
+      .eq('tab.table.restaurant_id', restaurantId)
       .gte('created_at', startOfDay)
       .lte('created_at', endOfDay)
 
@@ -2105,7 +2187,7 @@ export function useDailyPaymentStats(date?: string) {
     }
 
     setLoading(false)
-  }, [date])
+  }, [restaurantId, date])
 
   useEffect(() => {
     refresh()

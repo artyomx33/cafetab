@@ -2,6 +2,9 @@
 
 import { motion } from 'motion/react'
 import { useDashboardStats } from '@/lib/supabase/hooks'
+
+// Legacy route - hardcoded to Luna for backwards compatibility
+const LUNA_RESTAURANT_ID = 'c0000000-0000-0000-0000-000000000001'
 import { ActionCard } from '@/components/ui/action-card'
 import { StatCard } from '@/components/ui/stat-card'
 import { IconBox } from '@/components/ui/icon-box'
@@ -17,7 +20,7 @@ import {
 } from 'lucide-react'
 
 export default function AdminDashboard() {
-  const { stats, leaderboard, activity, loading } = useDashboardStats()
+  const { stats, leaderboard, activity, loading } = useDashboardStats(LUNA_RESTAURANT_ID)
 
   if (loading) {
     return (
