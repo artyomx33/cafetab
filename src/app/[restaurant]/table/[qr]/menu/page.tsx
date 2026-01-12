@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useTableByQR, useClientMenu, useCreateOrder, useProductWithModifiers } from '@/lib/supabase/hooks'
+import { useTableByQR, useClientMenu, useCreateOrder, useProductWithModifiers, useActivePromotions } from '@/lib/supabase/hooks'
 import { useRestaurant } from '@/contexts/RestaurantContext'
 import { useToast } from '@/components/ui/toast'
 import { ProductModal } from '@/components/ui/product-modal'
@@ -71,6 +71,7 @@ export default function MenuBrowser() {
   const { table, tab } = useTableByQR(qrCode)
   const { categories: dbCategories, loading: menuLoading } = useClientMenu(restaurantId || undefined)
   const { createOrder, loading: submitting } = useCreateOrder(tab?.id || null)
+  const { getBestPromotionForProduct, calculateDiscountedPrice, loading: promosLoading } = useActivePromotions(restaurantId || '')
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<CartItem[]>([])
@@ -98,7 +99,7 @@ export default function MenuBrowser() {
     })),
   }))
 
-  const loading = restaurantLoading || menuLoading
+  const loading = restaurantLoading || menuLoading || promosLoading
 
   // Set first category as selected when loaded
   useEffect(() => {
@@ -113,12 +114,16 @@ export default function MenuBrowser() {
       setSelectedProductId(product.id)
       setModalOpen(true)
     } else {
-      handleQuickAdd(product)
+      handleQuickAdd(product, selectedCategory || '')
     }
   }
 
   // Quick add for products without modifiers
-  const handleQuickAdd = (product: { id: string; name: string; price: number; description?: string }) => {
+  const handleQuickAdd = (product: { id: string; name: string; price: number; description?: string }, categoryId: string) => {
+    // Check for promotion and get effective price
+    const promo = getBestPromotionForProduct(product.id, categoryId, product.price)
+    const effectivePrice = promo ? calculateDiscountedPrice(product.price, promo) : product.price
+
     const existingIndex = cart.findIndex(item =>
       item.product.id === product.id && item.selectedModifiers.length === 0
     )
@@ -126,21 +131,22 @@ export default function MenuBrowser() {
     if (existingIndex >= 0) {
       setCart(cart.map((item, i) =>
         i === existingIndex
-          ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.product.price }
+          ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * effectivePrice }
           : item
       ))
     } else {
       const cartItem: CartItem = {
-        product: product as Product,
+        product: { ...product, price: effectivePrice } as Product,
         quantity: 1,
         selectedModifiers: [],
         notes: '',
-        totalPrice: product.price,
+        totalPrice: effectivePrice,
       }
       setCart([...cart, cartItem])
     }
 
-    toast.success(`Added ${product.name}`)
+    const promoText = promo && promo.badge_text ? ` (${promo.badge_text})` : ''
+    toast.success(`Added ${product.name}${promoText}`)
   }
 
   // Add to cart from modal (with modifiers)
@@ -278,16 +284,25 @@ export default function MenuBrowser() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {selectedCategoryData.products.map(product => {
               const emoji = getCategoryEmoji(selectedCategoryData.name)
+              const promo = getBestPromotionForProduct(product.id, selectedCategoryData.id, product.price)
+              const discountedPrice = promo ? calculateDiscountedPrice(product.price, promo) : null
 
               return (
                 <motion.button
                   key={product.id}
                   onClick={() => handleProductClick(product)}
                   whileTap={{ scale: 0.98 }}
-                  className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all text-left w-full"
+                  className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all text-left w-full relative"
                 >
+                  {/* Promotion Badge */}
+                  {promo && promo.badge_text && (
+                    <div className="absolute top-3 right-3 z-10 bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                      {promo.badge_text}
+                    </div>
+                  )}
+
                   {/* Visual Header */}
-                  <div className="h-20 relative bg-gradient-to-br from-amber-100 to-orange-100">
+                  <div className={`h-20 relative ${promo ? 'bg-gradient-to-br from-rose-100 to-orange-100' : 'bg-gradient-to-br from-amber-100 to-orange-100'}`}>
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className="text-4xl opacity-50">{emoji}</span>
                     </div>
@@ -299,9 +314,22 @@ export default function MenuBrowser() {
                       <p className="text-sm text-gray-500 mb-3 line-clamp-2">{product.description}</p>
                     )}
                     <div className="flex items-center justify-between">
-                      <span className="text-xl font-bold text-[#3E2723]">
-                        {formatPrice(product.price)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {discountedPrice !== null && discountedPrice !== product.price ? (
+                          <>
+                            <span className="text-xl font-bold text-[#E07A5F]">
+                              {formatPrice(discountedPrice)}
+                            </span>
+                            <span className="text-sm text-gray-400 line-through">
+                              {formatPrice(product.price)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xl font-bold text-[#3E2723]">
+                            {formatPrice(product.price)}
+                          </span>
+                        )}
+                      </div>
                       <div className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-1 text-sm ${
                         product.has_modifiers
                           ? 'bg-[#3E2723] text-white'
