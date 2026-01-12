@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
 import { useTables, useCreateTable, useUpdateTable, useDeleteTable, useAllSellers, useOpenTab, useTabByTableId } from '@/lib/supabase/hooks'
+
+// Legacy route - hardcoded to Luna for backwards compatibility
+const LUNA_RESTAURANT_ID = 'c0000000-0000-0000-0000-000000000001'
 import { ListRow } from '@/components/ui/list-row'
 import { FilterPills } from '@/components/ui/filter-pills'
 import { Button } from '@/components/ui/button'
@@ -23,7 +26,7 @@ export default function TablesPage() {
   const { create: createTable } = useCreateTable()
   const { update: updateTable } = useUpdateTable()
   const { deleteTable } = useDeleteTable()
-  const { sellers, loading: sellersLoading } = useAllSellers()
+  const { sellers, loading: sellersLoading } = useAllSellers(LUNA_RESTAURANT_ID)
   const { openTab } = useOpenTab()
   const toast = useToast()
 

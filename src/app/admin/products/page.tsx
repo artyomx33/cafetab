@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
 import { useAllProducts } from '@/lib/supabase/hooks'
+
+// Legacy route - hardcoded to Luna for backwards compatibility
+const LUNA_RESTAURANT_ID = 'c0000000-0000-0000-0000-000000000001'
 import { ListRow } from '@/components/ui/list-row'
 import { FilterPills } from '@/components/ui/filter-pills'
 import { Button } from '@/components/ui/button'
@@ -13,7 +16,7 @@ import { useToast } from '@/components/ui/toast'
 import type { Product } from '@/types'
 
 export default function ProductsPage() {
-  const { products, categories, loading, createProduct, updateProduct, deleteProduct, createCategory } = useAllProducts()
+  const { products, categories, loading, createProduct, updateProduct, deleteProduct, createCategory } = useAllProducts(LUNA_RESTAURANT_ID)
   const toast = useToast()
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')

@@ -15,7 +15,7 @@ export default function PaymentsPage() {
   const [methodFilter, setMethodFilter] = useState<'all' | 'card' | 'cash'>('all')
   const [sellerFilter, setSellerFilter] = useState<string | null>(null)
 
-  const { stats, loading: statsLoading, refresh: refreshStats } = useDailyPaymentStats(selectedDate)
+  const { stats, loading: statsLoading, refresh: refreshStats } = useDailyPaymentStats(restaurantId || '', selectedDate)
   const { sellers } = useSellers(restaurantId || undefined)
   const { createRefund, loading: refundLoading } = useCreateRefund()
   const toast = useToast()
@@ -25,7 +25,7 @@ export default function PaymentsPage() {
   const startOfDay = `${selectedDate}T00:00:00`
   const endOfDay = `${selectedDate}T23:59:59`
 
-  const { payments, loading: paymentsLoading, refresh: refreshPayments } = usePaymentHistory({
+  const { payments, loading: paymentsLoading, refresh: refreshPayments } = usePaymentHistory(restaurantId || '', {
     date_from: startOfDay,
     date_to: endOfDay,
     payment_method: methodFilter === 'all' ? null : methodFilter,

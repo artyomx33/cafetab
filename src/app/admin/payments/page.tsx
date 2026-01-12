@@ -7,14 +7,17 @@ import { useToast } from '@/components/ui/toast'
 import { RefundModal } from '@/components/ui/refund-modal'
 import { DollarSign, CreditCard, Banknote, TrendingUp, Users, Calendar, Filter, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 
+// Legacy admin route - uses Luna restaurant ID
+const LUNA_RESTAURANT_ID = 'c0000000-0000-0000-0000-000000000001'
+
 export default function PaymentsPage() {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0])
   const [showSellerStats, setShowSellerStats] = useState(true)
   const [methodFilter, setMethodFilter] = useState<'all' | 'card' | 'cash'>('all')
   const [sellerFilter, setSellerFilter] = useState<string | null>(null)
 
-  const { stats, loading: statsLoading, refresh: refreshStats } = useDailyPaymentStats(selectedDate)
-  const { sellers } = useAllSellers()
+  const { stats, loading: statsLoading, refresh: refreshStats } = useDailyPaymentStats(LUNA_RESTAURANT_ID, selectedDate)
+  const { sellers } = useAllSellers(LUNA_RESTAURANT_ID)
   const { createRefund, loading: refundLoading } = useCreateRefund()
   const toast = useToast()
   const [refundPayment, setRefundPayment] = useState<typeof payments[0] | null>(null)
@@ -23,7 +26,7 @@ export default function PaymentsPage() {
   const startOfDay = `${selectedDate}T00:00:00`
   const endOfDay = `${selectedDate}T23:59:59`
 
-  const { payments, loading: paymentsLoading, refresh: refreshPayments } = usePaymentHistory({
+  const { payments, loading: paymentsLoading, refresh: refreshPayments } = usePaymentHistory(LUNA_RESTAURANT_ID, {
     date_from: startOfDay,
     date_to: endOfDay,
     payment_method: methodFilter === 'all' ? null : methodFilter,
