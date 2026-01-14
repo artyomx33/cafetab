@@ -6,7 +6,7 @@
 -- Main promotions table
 CREATE TABLE cafe_promotions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  restaurant_id UUID NOT NULL REFERENCES cafe_restaurants(id) ON DELETE CASCADE,
+  restaurant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   description TEXT,
   type TEXT NOT NULL CHECK (type IN ('percent_off', 'buy_x_get_y')),
