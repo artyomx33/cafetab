@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@next/swc-darwin-arm64": "^16.1.1",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.26.2",
     "lucide-react": "^0.562.0",
     "motion": "^12.24.12",
     "next": "16.1.1",
