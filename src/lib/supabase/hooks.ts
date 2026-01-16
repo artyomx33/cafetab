@@ -1236,10 +1236,30 @@ export function useClientTab(tabId: string | null) {
   useEffect(() => {
     refresh()
 
-    // Poll for status updates every 10 seconds (kitchen updates every 5s)
-    const interval = setInterval(refresh, 10000)
-    return () => clearInterval(interval)
-  }, [refresh])
+    if (!tabId) return
+
+    // Subscribe to real-time order status updates instead of polling
+    const supabase = getSupabase()
+    const channel = supabase
+      .channel(`client-tab-${tabId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'cafe_order_items',
+        },
+        () => {
+          // Refresh when any order item status changes
+          refresh()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [refresh, tabId])
 
   return { tab, loading, refresh }
 }
