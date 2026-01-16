@@ -1235,6 +1235,10 @@ export function useClientTab(tabId: string | null) {
 
   useEffect(() => {
     refresh()
+
+    // Poll for status updates every 10 seconds (kitchen updates every 5s)
+    const interval = setInterval(refresh, 10000)
+    return () => clearInterval(interval)
   }, [refresh])
 
   return { tab, loading, refresh }
