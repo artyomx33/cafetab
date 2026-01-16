@@ -106,14 +106,21 @@ export default function PromotionsPage() {
     setSelectedProducts(prodIds)
 
     // Set schedule (use first schedule for simplicity)
+    // Issue 3: Reset ALL schedule fields first to clear stale values from previous edits
+    setSelectedDays([])
+    setStartTime('')
+    setEndTime('')
+    setStartDate('')
+    setEndDate('')
+
     const schedule = promo.schedules[0]
     if (schedule) {
       setScheduleType(schedule.type)
-      setSelectedDays(schedule.days_of_week || [])
-      setStartTime(schedule.start_time || '')
-      setEndTime(schedule.end_time || '')
-      setStartDate(schedule.start_date || '')
-      setEndDate(schedule.end_date || '')
+      if (schedule.days_of_week) setSelectedDays(schedule.days_of_week)
+      if (schedule.start_time) setStartTime(schedule.start_time)
+      if (schedule.end_time) setEndTime(schedule.end_time)
+      if (schedule.start_date) setStartDate(schedule.start_date)
+      if (schedule.end_date) setEndDate(schedule.end_date)
     } else {
       setScheduleType('always')
     }

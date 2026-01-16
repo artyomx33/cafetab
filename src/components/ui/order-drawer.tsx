@@ -118,7 +118,7 @@ export const OrderDrawer = ({
           quantity: m.quantity,
           price_adjustment: m.priceAdjustment,
         })),
-        unit_price: item.totalPrice / item.quantity,
+        unit_price: item.unitPrice, // Use original unit price, not derived from totalPrice
       }));
 
       await createOrder(orderItems);

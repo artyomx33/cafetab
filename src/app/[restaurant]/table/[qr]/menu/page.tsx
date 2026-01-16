@@ -71,7 +71,7 @@ export default function MenuBrowser() {
   const { table, tab } = useTableByQR(qrCode)
   const { categories: dbCategories, loading: menuLoading } = useClientMenu(restaurantId || undefined)
   const { createOrder, loading: submitting } = useCreateOrder(tab?.id || null)
-  const { getBestPromotionForProduct, calculateDiscountedPrice, orderPromotions, loading: promosLoading } = useActivePromotions(restaurantId || '')
+  const { getBestPromotionForProduct, calculateDiscountedPrice, orderPromotions, promotionsByProduct, promotionsByCategory, loading: promosLoading } = useActivePromotions(restaurantId || '')
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<CartItem[]>([])
@@ -136,7 +136,8 @@ export default function MenuBrowser() {
       ))
     } else {
       const cartItem: CartItem = {
-        product: { ...product, price: effectivePrice } as Product,
+        // Keep original price in product (Issue 6), add category_id (Issue 4)
+        product: { ...product, category_id: categoryId } as Product,
         quantity: 1,
         selectedModifiers: [],
         notes: '',
@@ -163,6 +164,13 @@ export default function MenuBrowser() {
         const newQuantity = item.quantity + change
         if (newQuantity <= 0) return item
 
+        // Recalculate with discounts (Issue 6: use original price from product)
+        const categoryId = (item.product as any).category_id || ''
+        const promo = getBestPromotionForProduct(item.product.id, categoryId, item.product.price)
+        const effectiveUnitPrice = promo
+          ? calculateDiscountedPrice(item.product.price, promo)
+          : item.product.price
+
         // Recalculate total with modifiers
         const modifierTotal = item.selectedModifiers.reduce(
           (sum, sm) => sum + sm.modifier.price_adjustment * sm.quantity, 0
@@ -170,7 +178,7 @@ export default function MenuBrowser() {
         return {
           ...item,
           quantity: newQuantity,
-          totalPrice: newQuantity * (item.product.price + modifierTotal)
+          totalPrice: newQuantity * (effectiveUnitPrice + modifierTotal)
         }
       }
       return item
@@ -184,8 +192,7 @@ export default function MenuBrowser() {
   const cartSubtotal = cart.reduce((sum, item) => sum + item.totalPrice, 0)
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
 
-  // Calculate Buy X Get Y discounts
-  const { promotionsByProduct, promotionsByCategory } = useActivePromotions(restaurantId || '')
+  // Calculate Buy X Get Y discounts (using promotionsByProduct, promotionsByCategory from single hook call above)
 
   const buyXGetYDiscount = useMemo(() => {
     let totalDiscount = 0

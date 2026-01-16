@@ -2325,7 +2325,22 @@ function isScheduleActive(schedule: PromotionSchedule): boolean {
         return false
       }
       if (schedule.start_time && schedule.end_time) {
-        return currentTime >= schedule.start_time && currentTime <= schedule.end_time
+        // Convert times to minutes for proper comparison (Issue 2: handle midnight-spanning)
+        const toMinutes = (time: string) => {
+          const [h, m] = time.split(':').map(Number)
+          return h * 60 + m
+        }
+        const currentMinutes = now.getHours() * 60 + now.getMinutes()
+        const startMinutes = toMinutes(schedule.start_time)
+        const endMinutes = toMinutes(schedule.end_time)
+
+        if (startMinutes <= endMinutes) {
+          // Normal time window: e.g., 09:00-17:00
+          return currentMinutes >= startMinutes && currentMinutes <= endMinutes
+        } else {
+          // Midnight-spanning window: e.g., 22:00-02:00
+          return currentMinutes >= startMinutes || currentMinutes <= endMinutes
+        }
       }
       return true
 
@@ -2694,13 +2709,19 @@ export function useActivePromotions(restaurantId: string) {
     // Calculate effective discount for each promotion and return the best one
     let bestPromo: ActivePromotion | null = null
     let bestDiscount = 0
+    let firstBuyXGetY: ActivePromotion | null = null // Issue 5: Track buy_x_get_y separately
 
     for (const promo of allPromos) {
+      // Issue 5: Track buy_x_get_y promotions separately (can't calculate discount without quantity)
+      if (promo.type === 'buy_x_get_y') {
+        if (!firstBuyXGetY) firstBuyXGetY = promo
+        continue
+      }
+
       let discount = 0
       if (promo.type === 'percent_off') {
         discount = price * (promo.value / 100)
       }
-      // For buy_x_get_y, we can't calculate without knowing quantity
 
       if (discount > bestDiscount) {
         bestDiscount = discount
@@ -2708,7 +2729,8 @@ export function useActivePromotions(restaurantId: string) {
       }
     }
 
-    return bestPromo
+    // Issue 5: Return percent_off if it has a discount, otherwise return buy_x_get_y for badge display
+    return bestPromo || firstBuyXGetY
   }, [promotionsByProduct, promotionsByCategory])
 
   // Calculate discounted price
