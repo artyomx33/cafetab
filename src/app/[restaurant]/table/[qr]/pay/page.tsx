@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useTableByQR, useClientTab } from '@/lib/supabase/hooks'
+import { useTableByQR, useClientTab, useActivePromotions } from '@/lib/supabase/hooks'
+import { useRestaurant } from '@/contexts/RestaurantContext'
 import { useToast } from '@/components/ui/toast'
 import { motion, AnimatePresence } from 'motion/react'
-import { ArrowLeft, CreditCard, DollarSign, AlertCircle, Users, User, Minus, Plus, Check } from 'lucide-react'
+import { ArrowLeft, CreditCard, DollarSign, AlertCircle, Users, User, Minus, Plus, Check, Tag } from 'lucide-react'
+import type { ActivePromotion } from '@/types'
 
 // Split bill modes
 type SplitMode = 'full' | 'split' | 'custom'
@@ -18,6 +20,20 @@ const TIP_PRESETS = [
   { label: '25%', value: 0.25, emoji: '' },
 ]
 
+// Interface for item with discount info
+interface ItemWithDiscount {
+  id: string
+  productId: string
+  productName: string
+  categoryId: string
+  quantity: number
+  unitPrice: number
+  originalTotal: number
+  discountedTotal: number
+  discount: number
+  promotion: ActivePromotion | null
+}
+
 export default function Checkout() {
   const params = useParams()
   const router = useRouter()
@@ -26,6 +42,13 @@ export default function Checkout() {
   const qrCode = params.qr as string
   const { table, tab: basicTab } = useTableByQR(qrCode)
   const { tab, loading } = useClientTab(basicTab?.id || null)
+  const { restaurantId, formatPrice } = useRestaurant()
+  const {
+    getBestPromotionForProduct,
+    orderPromotions,
+    calculateDiscountedPrice,
+    loading: promosLoading
+  } = useActivePromotions(restaurantId || '')
 
   // Tip state
   const [tipPercent, setTipPercent] = useState(0.15)
@@ -53,8 +76,80 @@ export default function Checkout() {
     setIsCustomTip(true)
   }
 
-  // Calculate amounts
-  const subtotal = tab?.total || 0
+  // Calculate item-level discounts
+  const itemsWithDiscounts = useMemo<ItemWithDiscount[]>(() => {
+    if (!tab?.tab_items) return []
+
+    return tab.tab_items.map(item => {
+      const originalTotal = item.unit_price * item.quantity
+      const promo = getBestPromotionForProduct(
+        item.product_id,
+        item.product.category_id,
+        item.unit_price
+      )
+
+      let discountedTotal = originalTotal
+      if (promo && promo.type === 'percent_off') {
+        discountedTotal = calculateDiscountedPrice(item.unit_price, promo) * item.quantity
+      }
+      // Handle buy_x_get_y: e.g., buy 2 get 1 free means every 3rd item is free
+      if (promo && promo.type === 'buy_x_get_y' && promo.buy_quantity) {
+        const buyQty = promo.buy_quantity
+        const freeQty = promo.value
+        const groupSize = buyQty + freeQty
+        const fullGroups = Math.floor(item.quantity / groupSize)
+        const remainder = item.quantity % groupSize
+        const paidItems = fullGroups * buyQty + Math.min(remainder, buyQty)
+        discountedTotal = paidItems * item.unit_price
+      }
+
+      return {
+        id: item.id,
+        productId: item.product_id,
+        productName: item.product.name,
+        categoryId: item.product.category_id,
+        quantity: item.quantity,
+        unitPrice: item.unit_price,
+        originalTotal,
+        discountedTotal,
+        discount: originalTotal - discountedTotal,
+        promotion: promo
+      }
+    })
+  }, [tab?.tab_items, getBestPromotionForProduct, calculateDiscountedPrice])
+
+  // Calculate totals with discounts
+  const originalSubtotal = itemsWithDiscounts.reduce((sum, item) => sum + item.originalTotal, 0)
+  const itemDiscountTotal = itemsWithDiscounts.reduce((sum, item) => sum + item.discount, 0)
+  const subtotalAfterItemDiscounts = originalSubtotal - itemDiscountTotal
+
+  // Calculate order-level discounts (apply to subtotal after item discounts)
+  const orderDiscount = useMemo(() => {
+    if (orderPromotions.length === 0 || subtotalAfterItemDiscounts <= 0) return { amount: 0, promotion: null }
+
+    // Find the best order-level promotion
+    let bestDiscount = 0
+    let bestPromo: ActivePromotion | null = null
+
+    for (const promo of orderPromotions) {
+      if (promo.type === 'percent_off') {
+        const discount = subtotalAfterItemDiscounts * (promo.value / 100)
+        if (discount > bestDiscount) {
+          bestDiscount = discount
+          bestPromo = promo
+        }
+      }
+    }
+
+    return { amount: bestDiscount, promotion: bestPromo }
+  }, [orderPromotions, subtotalAfterItemDiscounts])
+
+  // Final subtotal after all discounts
+  const subtotal = subtotalAfterItemDiscounts - orderDiscount.amount
+  const totalDiscount = itemDiscountTotal + orderDiscount.amount
+  const hasDiscounts = totalDiscount > 0
+
+  // Calculate tip and final total
   const tipAmount = isCustomTip
     ? (parseFloat(customTipAmount) || 0)
     : subtotal * tipPercent
@@ -102,7 +197,7 @@ export default function Checkout() {
     router.push(`/${slug}/table/${qrCode}`)
   }
 
-  if (loading) {
+  if (loading || promosLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -168,16 +263,22 @@ export default function Checkout() {
             animate={{ scale: 1 }}
             className="text-5xl font-bold text-[#3E2723] mb-2"
           >
-            ${userPayAmount.toFixed(2)}
+            {formatPrice(userPayAmount)}
           </motion.div>
           {splitMode !== 'full' && (
             <p className="text-sm text-gray-500">
-              of ${fullTotal.toFixed(2)} total
+              of {formatPrice(fullTotal)} total
+            </p>
+          )}
+          {hasDiscounts && (
+            <p className="text-sm text-green-600 mt-1 flex items-center justify-center gap-1">
+              <Tag size={12} />
+              Savings applied!
             </p>
           )}
           {tipAmount > 0 && (
             <p className="text-sm text-[#E07A5F] mt-1">
-              Includes ${tipAmount.toFixed(2)} tip
+              Includes {formatPrice(tipAmount)} tip
             </p>
           )}
         </motion.div>
@@ -263,7 +364,7 @@ export default function Checkout() {
                     </button>
                   </div>
                   <p className="text-center text-sm text-gray-500 mt-2">
-                    ${(fullTotal / splitCount).toFixed(2)} per person
+                    {formatPrice(fullTotal / splitCount)} per person
                   </p>
                 </motion.div>
               )}
@@ -345,24 +446,73 @@ export default function Checkout() {
         <div className="bg-white rounded-2xl shadow-lg p-5 mb-6">
           <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">Summary</h3>
           <div className="space-y-2 text-sm">
+            {/* Original subtotal (show only if there are discounts) */}
+            {hasDiscounts && (
+              <div className="flex justify-between text-gray-400">
+                <span>Original Subtotal</span>
+                <span className="line-through">{formatPrice(originalSubtotal)}</span>
+              </div>
+            )}
+
+            {/* Item-level discounts */}
+            {itemsWithDiscounts.filter(item => item.discount > 0).map(item => (
+              <div key={item.id} className="flex justify-between text-green-600">
+                <span className="flex items-center gap-1">
+                  <Tag size={12} />
+                  {item.promotion?.badge_text || item.promotion?.name || 'Discount'}
+                  <span className="text-gray-400 text-xs">({item.productName})</span>
+                </span>
+                <span className="font-medium">-{formatPrice(item.discount)}</span>
+              </div>
+            ))}
+
+            {/* Order-level discount */}
+            {orderDiscount.amount > 0 && orderDiscount.promotion && (
+              <div className="flex justify-between text-green-600">
+                <span className="flex items-center gap-1">
+                  <Tag size={12} />
+                  {orderDiscount.promotion.badge_text || orderDiscount.promotion.name}
+                  <span className="text-gray-400 text-xs">(order)</span>
+                </span>
+                <span className="font-medium">-{formatPrice(orderDiscount.amount)}</span>
+              </div>
+            )}
+
+            {/* Subtotal after discounts */}
             <div className="flex justify-between">
-              <span className="text-gray-600">Subtotal</span>
-              <span className="font-medium">${subtotal.toFixed(2)}</span>
+              <span className="text-gray-600">{hasDiscounts ? 'Subtotal (after discounts)' : 'Subtotal'}</span>
+              <span className="font-medium">{formatPrice(subtotal)}</span>
             </div>
+
+            {/* Tip */}
             {tipAmount > 0 && (
               <div className="flex justify-between text-[#E07A5F]">
                 <span>Tip ({isCustomTip ? 'custom' : `${(tipPercent * 100).toFixed(0)}%`})</span>
-                <span className="font-medium">${tipAmount.toFixed(2)}</span>
+                <span className="font-medium">{formatPrice(tipAmount)}</span>
               </div>
             )}
+
+            {/* Total */}
             <div className="border-t border-gray-100 pt-2 flex justify-between">
               <span className="font-semibold text-gray-700">Total</span>
-              <span className="font-bold text-[#3E2723]">${fullTotal.toFixed(2)}</span>
+              <span className="font-bold text-[#3E2723]">{formatPrice(fullTotal)}</span>
             </div>
+
+            {/* Total savings badge */}
+            {hasDiscounts && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-2 flex items-center justify-center gap-2 mt-2">
+                <Tag size={14} className="text-green-600" />
+                <span className="text-green-700 font-medium text-xs">
+                  You saved {formatPrice(totalDiscount)}!
+                </span>
+              </div>
+            )}
+
+            {/* Split bill indicator */}
             {splitMode !== 'full' && (
               <div className="bg-[#FFF8E7] rounded-lg p-2 flex justify-between">
                 <span className="font-semibold text-[#3E2723]">You Pay</span>
-                <span className="font-bold text-[#3E2723]">${userPayAmount.toFixed(2)}</span>
+                <span className="font-bold text-[#3E2723]">{formatPrice(userPayAmount)}</span>
               </div>
             )}
           </div>
@@ -372,7 +522,7 @@ export default function Checkout() {
               <div className="bg-gradient-to-r from-[#FFF8E7] to-[#F5EBD7] rounded-xl p-3">
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-700">Prepaid Balance:</span>
-                  <span className="font-bold text-[#E07A5F]">${tab.balance.toFixed(2)}</span>
+                  <span className="font-bold text-[#E07A5F]">{formatPrice(tab.balance)}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                   <div
@@ -402,7 +552,7 @@ export default function Checkout() {
               ) : (
                 <>
                   <CreditCard size={24} />
-                  Pay ${userPayAmount.toFixed(2)}
+                  Pay {formatPrice(userPayAmount)}
                 </>
               )}
             </motion.button>
@@ -415,7 +565,7 @@ export default function Checkout() {
               whileTap={{ scale: 0.98 }}
               className="w-full bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white py-5 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl transition-all disabled:opacity-50"
             >
-              {processing ? 'Processing...' : `Close Tab & Refund $${tab.balance.toFixed(2)}`}
+              {processing ? 'Processing...' : `Close Tab & Refund ${formatPrice(tab.balance)}`}
             </motion.button>
           )}
 
@@ -464,7 +614,7 @@ export default function Checkout() {
                     </div>
                     <h2 className="text-2xl font-bold text-[#3E2723] mb-2">Confirm Payment</h2>
                     <p className="text-gray-600">You're about to pay</p>
-                    <p className="text-4xl font-bold text-[#3E2723] mt-2">${userPayAmount.toFixed(2)}</p>
+                    <p className="text-4xl font-bold text-[#3E2723] mt-2">{formatPrice(userPayAmount)}</p>
                   </div>
                   <div className="space-y-3">
                     <button
@@ -490,7 +640,7 @@ export default function Checkout() {
                     </div>
                     <h2 className="text-2xl font-bold text-[#3E2723] mb-2">Close Tab?</h2>
                     <p className="text-gray-600">You'll receive a refund of</p>
-                    <p className="text-4xl font-bold text-[#E07A5F] mt-2">${tab?.balance.toFixed(2)}</p>
+                    <p className="text-4xl font-bold text-[#E07A5F] mt-2">{formatPrice(tab?.balance || 0)}</p>
                   </div>
                   <div className="space-y-3">
                     <button
