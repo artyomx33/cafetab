@@ -27,7 +27,15 @@ import type {
   ModifierGroupWithModifiers,
   ProductWithModifiers,
   OrderItemModifier,
-  TabItemModifier
+  TabItemModifier,
+  Promotion,
+  PromotionWithDetails,
+  PromotionTarget,
+  PromotionSchedule,
+  ActivePromotion,
+  PromotionType,
+  PromotionScope,
+  PromotionScheduleType
 } from '@/types'
 
 // Re-export types from @/types
@@ -2292,4 +2300,454 @@ export function useCreateRefund() {
   }, [])
 
   return { createRefund, loading }
+}
+
+// ============================================
+// PROMOTIONS HOOKS
+// ============================================
+
+// Helper to check if a promotion schedule is currently active
+function isScheduleActive(schedule: PromotionSchedule): boolean {
+  const now = new Date()
+  const currentDay = now.getDay() // 0=Sun, 1=Mon, ..., 6=Sat
+  const currentTime = now.toTimeString().slice(0, 5) // HH:MM format
+  const currentDate = now.toISOString().split('T')[0] // YYYY-MM-DD
+
+  switch (schedule.type) {
+    case 'always':
+      return true
+
+    case 'day_of_week':
+      return schedule.days_of_week?.includes(currentDay) ?? false
+
+    case 'time_window':
+      if (schedule.days_of_week && !schedule.days_of_week.includes(currentDay)) {
+        return false
+      }
+      if (schedule.start_time && schedule.end_time) {
+        // Convert times to minutes for proper comparison (Issue 2: handle midnight-spanning)
+        const toMinutes = (time: string) => {
+          const [h, m] = time.split(':').map(Number)
+          return h * 60 + m
+        }
+        const currentMinutes = now.getHours() * 60 + now.getMinutes()
+        const startMinutes = toMinutes(schedule.start_time)
+        const endMinutes = toMinutes(schedule.end_time)
+
+        if (startMinutes <= endMinutes) {
+          // Normal time window: e.g., 09:00-17:00
+          return currentMinutes >= startMinutes && currentMinutes <= endMinutes
+        } else {
+          // Midnight-spanning window: e.g., 22:00-02:00
+          return currentMinutes >= startMinutes || currentMinutes <= endMinutes
+        }
+      }
+      return true
+
+    case 'date_range':
+      if (schedule.start_date && currentDate < schedule.start_date) return false
+      if (schedule.end_date && currentDate > schedule.end_date) return false
+      return true
+
+    default:
+      return false
+  }
+}
+
+// Hook to fetch all promotions for a restaurant (admin use)
+export function usePromotions(restaurantId: string) {
+  const [promotions, setPromotions] = useState<PromotionWithDetails[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    if (!restaurantId) {
+      setPromotions([])
+      setLoading(false)
+      return
+    }
+
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('cafe_promotions')
+      .select(`
+        *,
+        cafe_promotion_targets (*),
+        cafe_promotion_schedules (*)
+      `)
+      .eq('restaurant_id', restaurantId)
+      .order('created_at', { ascending: false })
+
+    if (data) {
+      const formatted = data.map((promo: any) => ({
+        id: promo.id,
+        restaurant_id: promo.restaurant_id,
+        name: promo.name,
+        description: promo.description,
+        type: promo.type,
+        value: promo.value,
+        buy_quantity: promo.buy_quantity,
+        scope: promo.scope,
+        badge_text: promo.badge_text,
+        is_active: promo.is_active,
+        created_at: promo.created_at,
+        targets: promo.cafe_promotion_targets || [],
+        schedules: promo.cafe_promotion_schedules || []
+      }))
+      setPromotions(formatted)
+    }
+    setLoading(false)
+  }, [restaurantId])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const createPromotion = useCallback(async (data: {
+    name: string
+    description?: string
+    type: PromotionType
+    value: number
+    buy_quantity?: number
+    scope: PromotionScope
+    badge_text?: string
+    targets?: { category_id?: string; product_id?: string }[]
+    schedules?: {
+      type: PromotionScheduleType
+      days_of_week?: number[]
+      start_time?: string
+      end_time?: string
+      start_date?: string
+      end_date?: string
+    }[]
+  }) => {
+    const supabase = getSupabase()
+
+    // Create the promotion
+    const { data: promo, error: promoError } = await supabase
+      .from('cafe_promotions')
+      .insert({
+        restaurant_id: restaurantId,
+        name: data.name,
+        description: data.description || null,
+        type: data.type,
+        value: data.value,
+        buy_quantity: data.buy_quantity || null,
+        scope: data.scope,
+        badge_text: data.badge_text || null,
+        is_active: true
+      })
+      .select()
+      .single()
+
+    if (promoError || !promo) throw promoError || new Error('Failed to create promotion')
+
+    // Add targets if provided
+    if (data.targets && data.targets.length > 0) {
+      const targetInserts = data.targets.map(t => ({
+        promotion_id: promo.id,
+        category_id: t.category_id || null,
+        product_id: t.product_id || null
+      }))
+
+      const { error: targetError } = await supabase
+        .from('cafe_promotion_targets')
+        .insert(targetInserts)
+
+      if (targetError) throw targetError
+    }
+
+    // Add schedules if provided (default to 'always' if none)
+    const schedulesToInsert = data.schedules && data.schedules.length > 0
+      ? data.schedules
+      : [{ type: 'always' as const }]
+
+    const scheduleInserts = schedulesToInsert.map(s => ({
+      promotion_id: promo.id,
+      type: s.type,
+      days_of_week: s.days_of_week || null,
+      start_time: s.start_time || null,
+      end_time: s.end_time || null,
+      start_date: s.start_date || null,
+      end_date: s.end_date || null
+    }))
+
+    const { error: scheduleError } = await supabase
+      .from('cafe_promotion_schedules')
+      .insert(scheduleInserts)
+
+    if (scheduleError) throw scheduleError
+
+    refresh()
+    return promo
+  }, [restaurantId, refresh])
+
+  const updatePromotion = useCallback(async (
+    promotionId: string,
+    data: Partial<{
+      name: string
+      description: string | null
+      type: PromotionType
+      value: number
+      buy_quantity: number | null
+      scope: PromotionScope
+      badge_text: string | null
+      is_active: boolean
+    }>
+  ) => {
+    const supabase = getSupabase()
+    const { data: promo, error } = await supabase
+      .from('cafe_promotions')
+      .update(data)
+      .eq('id', promotionId)
+      .select()
+      .single()
+
+    if (error) throw error
+    refresh()
+    return promo
+  }, [refresh])
+
+  const deletePromotion = useCallback(async (promotionId: string) => {
+    const supabase = getSupabase()
+    const { error } = await supabase
+      .from('cafe_promotions')
+      .delete()
+      .eq('id', promotionId)
+
+    if (error) throw error
+    refresh()
+  }, [refresh])
+
+  const togglePromotion = useCallback(async (promotionId: string, isActive: boolean) => {
+    return updatePromotion(promotionId, { is_active: isActive })
+  }, [updatePromotion])
+
+  // Update targets for a promotion
+  const updateTargets = useCallback(async (
+    promotionId: string,
+    targets: { category_id?: string; product_id?: string }[]
+  ) => {
+    const supabase = getSupabase()
+
+    // Delete existing targets
+    await supabase
+      .from('cafe_promotion_targets')
+      .delete()
+      .eq('promotion_id', promotionId)
+
+    // Insert new targets
+    if (targets.length > 0) {
+      const targetInserts = targets.map(t => ({
+        promotion_id: promotionId,
+        category_id: t.category_id || null,
+        product_id: t.product_id || null
+      }))
+
+      const { error } = await supabase
+        .from('cafe_promotion_targets')
+        .insert(targetInserts)
+
+      if (error) throw error
+    }
+
+    refresh()
+  }, [refresh])
+
+  // Update schedules for a promotion
+  const updateSchedules = useCallback(async (
+    promotionId: string,
+    schedules: {
+      type: PromotionScheduleType
+      days_of_week?: number[]
+      start_time?: string
+      end_time?: string
+      start_date?: string
+      end_date?: string
+    }[]
+  ) => {
+    const supabase = getSupabase()
+
+    // Delete existing schedules
+    await supabase
+      .from('cafe_promotion_schedules')
+      .delete()
+      .eq('promotion_id', promotionId)
+
+    // Insert new schedules
+    const scheduleInserts = schedules.map(s => ({
+      promotion_id: promotionId,
+      type: s.type,
+      days_of_week: s.days_of_week || null,
+      start_time: s.start_time || null,
+      end_time: s.end_time || null,
+      start_date: s.start_date || null,
+      end_date: s.end_date || null
+    }))
+
+    const { error } = await supabase
+      .from('cafe_promotion_schedules')
+      .insert(scheduleInserts)
+
+    if (error) throw error
+    refresh()
+  }, [refresh])
+
+  return {
+    promotions,
+    loading,
+    refresh,
+    createPromotion,
+    updatePromotion,
+    deletePromotion,
+    togglePromotion,
+    updateTargets,
+    updateSchedules
+  }
+}
+
+// Hook to get currently active promotions for the menu (customer-facing)
+export function useActivePromotions(restaurantId: string) {
+  const [promotionsByProduct, setPromotionsByProduct] = useState<Map<string, ActivePromotion[]>>(new Map())
+  const [promotionsByCategory, setPromotionsByCategory] = useState<Map<string, ActivePromotion[]>>(new Map())
+  const [orderPromotions, setOrderPromotions] = useState<ActivePromotion[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(async () => {
+    if (!restaurantId) {
+      setPromotionsByProduct(new Map())
+      setPromotionsByCategory(new Map())
+      setOrderPromotions([])
+      setLoading(false)
+      return
+    }
+
+    const supabase = getSupabase()
+
+    // Fetch all active promotions with their targets and schedules
+    const { data } = await supabase
+      .from('cafe_promotions')
+      .select(`
+        *,
+        cafe_promotion_targets (*),
+        cafe_promotion_schedules (*)
+      `)
+      .eq('restaurant_id', restaurantId)
+      .eq('is_active', true)
+
+    if (!data) {
+      setLoading(false)
+      return
+    }
+
+    const productPromos = new Map<string, ActivePromotion[]>()
+    const categoryPromos = new Map<string, ActivePromotion[]>()
+    const orderPromos: ActivePromotion[] = []
+
+    for (const promo of data) {
+      // Check if any schedule is currently active
+      const schedules = promo.cafe_promotion_schedules || []
+      const isActive = schedules.length === 0 || schedules.some((s: any) => isScheduleActive(s))
+
+      if (!isActive) continue
+
+      const activePromo: ActivePromotion = {
+        id: promo.id,
+        name: promo.name,
+        type: promo.type,
+        value: promo.value,
+        buy_quantity: promo.buy_quantity,
+        badge_text: promo.badge_text
+      }
+
+      const targets = promo.cafe_promotion_targets || []
+
+      switch (promo.scope) {
+        case 'order':
+          orderPromos.push(activePromo)
+          break
+
+        case 'category':
+          for (const target of targets) {
+            if (target.category_id) {
+              const existing = categoryPromos.get(target.category_id) || []
+              existing.push(activePromo)
+              categoryPromos.set(target.category_id, existing)
+            }
+          }
+          break
+
+        case 'items':
+          for (const target of targets) {
+            if (target.product_id) {
+              const existing = productPromos.get(target.product_id) || []
+              existing.push(activePromo)
+              productPromos.set(target.product_id, existing)
+            }
+          }
+          break
+      }
+    }
+
+    setPromotionsByProduct(productPromos)
+    setPromotionsByCategory(categoryPromos)
+    setOrderPromotions(orderPromos)
+    setLoading(false)
+  }, [restaurantId])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  // Get the best promotion for a product (considering both direct and category promotions)
+  const getBestPromotionForProduct = useCallback((productId: string, categoryId: string, price: number): ActivePromotion | null => {
+    const directPromos = promotionsByProduct.get(productId) || []
+    const categoryPromosList = promotionsByCategory.get(categoryId) || []
+    const allPromos = [...directPromos, ...categoryPromosList]
+
+    if (allPromos.length === 0) return null
+
+    // Calculate effective discount for each promotion and return the best one
+    let bestPromo: ActivePromotion | null = null
+    let bestDiscount = 0
+    let firstBuyXGetY: ActivePromotion | null = null // Issue 5: Track buy_x_get_y separately
+
+    for (const promo of allPromos) {
+      // Issue 5: Track buy_x_get_y promotions separately (can't calculate discount without quantity)
+      if (promo.type === 'buy_x_get_y') {
+        if (!firstBuyXGetY) firstBuyXGetY = promo
+        continue
+      }
+
+      let discount = 0
+      if (promo.type === 'percent_off') {
+        discount = price * (promo.value / 100)
+      }
+
+      if (discount > bestDiscount) {
+        bestDiscount = discount
+        bestPromo = { ...promo, discounted_price: price - discount }
+      }
+    }
+
+    // Issue 5: Return percent_off if it has a discount, otherwise return buy_x_get_y for badge display
+    return bestPromo || firstBuyXGetY
+  }, [promotionsByProduct, promotionsByCategory])
+
+  // Calculate discounted price
+  const calculateDiscountedPrice = useCallback((price: number, promo: ActivePromotion): number => {
+    if (promo.type === 'percent_off') {
+      return price * (1 - promo.value / 100)
+    }
+    return price // buy_x_get_y doesn't change unit price
+  }, [])
+
+  return {
+    promotionsByProduct,
+    promotionsByCategory,
+    orderPromotions,
+    loading,
+    refresh,
+    getBestPromotionForProduct,
+    calculateDiscountedPrice
+  }
 }

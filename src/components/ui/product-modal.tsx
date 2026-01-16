@@ -4,7 +4,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { X, Plus, Minus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { ProductWithModifiers, CartItem, SelectedModifier, Modifier } from "@/types";
+import { ProductWithModifiers, CartItem, SelectedModifier, Modifier, ActivePromotion } from "@/types";
 import { Button } from "./button";
 import { Input } from "./input";
 
@@ -13,6 +13,8 @@ export interface ProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddToCart: (item: CartItem) => void;
+  promotion?: ActivePromotion | null;
+  discountedBasePrice?: number;
 }
 
 export const ProductModal = ({
@@ -20,7 +22,11 @@ export const ProductModal = ({
   isOpen,
   onClose,
   onAddToCart,
+  promotion,
+  discountedBasePrice,
 }: ProductModalProps) => {
+  // Use discounted price if promotion applies, otherwise use original
+  const effectiveBasePrice = discountedBasePrice ?? product.price;
   const [quantity, setQuantity] = React.useState(1);
   const [notes, setNotes] = React.useState("");
   const [selectedModifiers, setSelectedModifiers] = React.useState<
@@ -98,7 +104,7 @@ export const ProductModal = ({
   };
 
   const calculateTotal = (): number => {
-    let total = product.price;
+    let total = effectiveBasePrice;
 
     selectedModifiers.forEach((selected) => {
       total += selected.modifier.price_adjustment * selected.quantity;
@@ -134,8 +140,14 @@ export const ProductModal = ({
   const handleAddToCart = () => {
     if (!canAddToCart()) return;
 
+    // Use effective price in the cart item
+    const productWithEffectivePrice = {
+      ...product,
+      price: effectiveBasePrice,
+    };
+
     const cartItem: CartItem = {
-      product,
+      product: productWithEffectivePrice,
       quantity,
       selectedModifiers: Array.from(selectedModifiers.values()),
       notes,
@@ -198,19 +210,41 @@ export const ProductModal = ({
               <div className="p-6 space-y-6">
                 {/* Product Info */}
                 <div>
-                  <h2 className="text-2xl sm:text-3xl font-bold text-[var(--foreground)] mb-2">
-                    {product.name}
-                  </h2>
+                  <div className="flex items-start justify-between gap-3">
+                    <h2 className="text-2xl sm:text-3xl font-bold text-[var(--foreground)] mb-2">
+                      {product.name}
+                    </h2>
+                    {promotion?.badge_text && (
+                      <span className="flex-shrink-0 bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white text-xs font-bold px-3 py-1 rounded-full">
+                        {promotion.badge_text}
+                      </span>
+                    )}
+                  </div>
                   {product.description && (
                     <p className="text-[var(--muted-foreground)] text-base mb-3">
                       {product.description}
                     </p>
                   )}
-                  <p className="text-xl font-semibold text-[var(--primary)]">
-                    {product.price_type === "ask_server"
-                      ? "Price upon request"
-                      : formatPrice(product.price)}
-                  </p>
+                  <div className="flex items-center gap-3">
+                    {product.price_type === "ask_server" ? (
+                      <p className="text-xl font-semibold text-[var(--primary)]">
+                        Price upon request
+                      </p>
+                    ) : promotion && effectiveBasePrice !== product.price ? (
+                      <>
+                        <p className="text-xl font-semibold text-[#E07A5F]">
+                          {formatPrice(effectiveBasePrice)}
+                        </p>
+                        <p className="text-base text-[var(--muted-foreground)] line-through">
+                          {formatPrice(product.price)}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xl font-semibold text-[var(--primary)]">
+                        {formatPrice(product.price)}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Modifier Groups */}

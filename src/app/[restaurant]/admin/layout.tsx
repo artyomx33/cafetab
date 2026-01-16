@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useRestaurant } from '@/contexts/RestaurantContext'
-import { LayoutDashboard, Package, Users, Settings, UtensilsCrossed, ChefHat, CreditCard } from 'lucide-react'
+import { LayoutDashboard, Package, Users, Settings, UtensilsCrossed, ChefHat, CreditCard, Tag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function AdminLayout({
@@ -19,6 +19,7 @@ export default function AdminLayout({
     { href: `/${slug}/admin/kitchen`, label: 'Kitchen', icon: ChefHat },
     { href: `/${slug}/admin/products`, label: 'Products', icon: Package },
     { href: `/${slug}/admin/tables`, label: 'Tables', icon: UtensilsCrossed },
+    { href: `/${slug}/admin/promotions`, label: 'Promotions', icon: Tag },
     { href: `/${slug}/admin/payments`, label: 'Payments', icon: CreditCard },
     { href: `/${slug}/admin/sellers`, label: 'Staff', icon: Users },
     { href: `/${slug}/admin/settings`, label: 'Settings', icon: Settings },

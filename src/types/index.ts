@@ -362,6 +362,71 @@ export interface NotificationWithTable extends Notification {
 }
 
 // ============================================
+// PROMOTION TYPES
+// ============================================
+export type PromotionType = 'percent_off' | 'buy_x_get_y'
+export type PromotionScope = 'category' | 'items' | 'order'
+export type PromotionScheduleType = 'always' | 'time_window' | 'day_of_week' | 'date_range'
+
+export interface Promotion {
+  id: string
+  restaurant_id: string
+  name: string
+  description: string | null
+  type: PromotionType
+  value: number // percentage (20 = 20%) or Y quantity for buy_x_get_y
+  buy_quantity: number | null // X in "buy X get Y" (null for percent_off)
+  scope: PromotionScope
+  badge_text: string | null
+  is_active: boolean
+  created_at: string
+}
+
+export type PromotionInsert = Omit<Promotion, 'id' | 'created_at'>
+export type PromotionUpdate = Partial<PromotionInsert>
+
+export interface PromotionTarget {
+  id: string
+  promotion_id: string
+  category_id: string | null
+  product_id: string | null
+  created_at: string
+}
+
+export type PromotionTargetInsert = Omit<PromotionTarget, 'id' | 'created_at'>
+
+export interface PromotionSchedule {
+  id: string
+  promotion_id: string
+  type: PromotionScheduleType
+  days_of_week: number[] | null // 0=Sun, 1=Mon, ..., 6=Sat
+  start_time: string | null // HH:MM format
+  end_time: string | null
+  start_date: string | null // YYYY-MM-DD format
+  end_date: string | null
+  created_at: string
+}
+
+export type PromotionScheduleInsert = Omit<PromotionSchedule, 'id' | 'created_at'>
+
+// Promotion with targets and schedules
+export interface PromotionWithDetails extends Promotion {
+  targets: PromotionTarget[]
+  schedules: PromotionSchedule[]
+}
+
+// Active promotion for a product (computed at runtime)
+export interface ActivePromotion {
+  id: string
+  name: string
+  type: PromotionType
+  value: number
+  buy_quantity: number | null
+  badge_text: string | null
+  discounted_price?: number // Pre-calculated discounted price
+}
+
+// ============================================
 // DATABASE TYPE (for Supabase client)
 // ============================================
 export interface Database {

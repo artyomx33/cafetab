@@ -8,7 +8,7 @@ interface ListRowProps {
   avatar?: React.ReactNode
   title: string
   code?: string
-  subtitle?: string
+  subtitle?: React.ReactNode
   badges?: Array<{
     label: string
     variant: 'success' | 'warning' | 'error' | 'gold' | 'teal' | 'muted'

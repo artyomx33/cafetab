@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useTableByQR, useClientMenu, useCreateOrder, useProductWithModifiers } from '@/lib/supabase/hooks'
+import { useTableByQR, useClientMenu, useCreateOrder, useProductWithModifiers, useActivePromotions } from '@/lib/supabase/hooks'
 import { useRestaurant } from '@/contexts/RestaurantContext'
 import { useToast } from '@/components/ui/toast'
 import { ProductModal } from '@/components/ui/product-modal'
@@ -71,6 +71,7 @@ export default function MenuBrowser() {
   const { table, tab } = useTableByQR(qrCode)
   const { categories: dbCategories, loading: menuLoading } = useClientMenu(restaurantId || undefined)
   const { createOrder, loading: submitting } = useCreateOrder(tab?.id || null)
+  const { getBestPromotionForProduct, calculateDiscountedPrice, orderPromotions, promotionsByProduct, promotionsByCategory, loading: promosLoading } = useActivePromotions(restaurantId || '')
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<CartItem[]>([])
@@ -98,7 +99,7 @@ export default function MenuBrowser() {
     })),
   }))
 
-  const loading = restaurantLoading || menuLoading
+  const loading = restaurantLoading || menuLoading || promosLoading
 
   // Set first category as selected when loaded
   useEffect(() => {
@@ -113,12 +114,16 @@ export default function MenuBrowser() {
       setSelectedProductId(product.id)
       setModalOpen(true)
     } else {
-      handleQuickAdd(product)
+      handleQuickAdd(product, selectedCategory || '')
     }
   }
 
   // Quick add for products without modifiers
-  const handleQuickAdd = (product: { id: string; name: string; price: number; description?: string }) => {
+  const handleQuickAdd = (product: { id: string; name: string; price: number; description?: string }, categoryId: string) => {
+    // Check for promotion and get effective price
+    const promo = getBestPromotionForProduct(product.id, categoryId, product.price)
+    const effectivePrice = promo ? calculateDiscountedPrice(product.price, promo) : product.price
+
     const existingIndex = cart.findIndex(item =>
       item.product.id === product.id && item.selectedModifiers.length === 0
     )
@@ -126,21 +131,23 @@ export default function MenuBrowser() {
     if (existingIndex >= 0) {
       setCart(cart.map((item, i) =>
         i === existingIndex
-          ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.product.price }
+          ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * effectivePrice }
           : item
       ))
     } else {
       const cartItem: CartItem = {
-        product: product as Product,
+        // Keep original price in product (Issue 6), add category_id (Issue 4)
+        product: { ...product, category_id: categoryId } as Product,
         quantity: 1,
         selectedModifiers: [],
         notes: '',
-        totalPrice: product.price,
+        totalPrice: effectivePrice,
       }
       setCart([...cart, cartItem])
     }
 
-    toast.success(`Added ${product.name}`)
+    const promoText = promo && promo.badge_text ? ` (${promo.badge_text})` : ''
+    toast.success(`Added ${product.name}${promoText}`)
   }
 
   // Add to cart from modal (with modifiers)
@@ -157,6 +164,13 @@ export default function MenuBrowser() {
         const newQuantity = item.quantity + change
         if (newQuantity <= 0) return item
 
+        // Recalculate with discounts (Issue 6: use original price from product)
+        const categoryId = (item.product as any).category_id || ''
+        const promo = getBestPromotionForProduct(item.product.id, categoryId, item.product.price)
+        const effectiveUnitPrice = promo
+          ? calculateDiscountedPrice(item.product.price, promo)
+          : item.product.price
+
         // Recalculate total with modifiers
         const modifierTotal = item.selectedModifiers.reduce(
           (sum, sm) => sum + sm.modifier.price_adjustment * sm.quantity, 0
@@ -164,7 +178,7 @@ export default function MenuBrowser() {
         return {
           ...item,
           quantity: newQuantity,
-          totalPrice: newQuantity * (item.product.price + modifierTotal)
+          totalPrice: newQuantity * (effectiveUnitPrice + modifierTotal)
         }
       }
       return item
@@ -175,8 +189,92 @@ export default function MenuBrowser() {
     setCart(cart.filter((_, i) => i !== index))
   }
 
-  const cartTotal = cart.reduce((sum, item) => sum + item.totalPrice, 0)
+  const cartSubtotal = cart.reduce((sum, item) => sum + item.totalPrice, 0)
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
+
+  // Calculate Buy X Get Y discounts (using promotionsByProduct, promotionsByCategory from single hook call above)
+
+  const buyXGetYDiscount = useMemo(() => {
+    let totalDiscount = 0
+    const appliedDeals: { promo: any; freeItems: number; discount: number }[] = []
+
+    // Group cart items by their Buy X Get Y promotions
+    const promoItemGroups = new Map<string, { items: typeof cart; promo: any }>()
+
+    cart.forEach(cartItem => {
+      // Find if this product has a Buy X Get Y promo
+      const productPromos = promotionsByProduct.get(cartItem.product.id) || []
+      const categoryId = (cartItem.product as any).category_id
+      const categoryPromos = categoryId ? (promotionsByCategory.get(categoryId) || []) : []
+      const allPromos = [...productPromos, ...categoryPromos]
+
+      const buyXGetY = allPromos.find(p => p.type === 'buy_x_get_y')
+      if (buyXGetY) {
+        const existing = promoItemGroups.get(buyXGetY.id)
+        if (existing) {
+          existing.items.push(cartItem)
+        } else {
+          promoItemGroups.set(buyXGetY.id, { items: [cartItem], promo: buyXGetY })
+        }
+      }
+    })
+
+    // Calculate discounts for each promo group
+    promoItemGroups.forEach(({ items, promo }) => {
+      const buyQty = promo.buy_quantity || 2
+      const freeQty = promo.value || 1
+
+      // Get all individual item prices (expanded by quantity)
+      const allPrices: number[] = []
+      items.forEach(item => {
+        const unitPrice = item.totalPrice / item.quantity
+        for (let i = 0; i < item.quantity; i++) {
+          allPrices.push(unitPrice)
+        }
+      })
+
+      // Sort prices ascending (cheapest first - these become free)
+      allPrices.sort((a, b) => a - b)
+
+      const totalItems = allPrices.length
+      const setsOfPromo = Math.floor(totalItems / (buyQty + freeQty))
+      const freeItems = setsOfPromo * freeQty
+
+      if (freeItems > 0) {
+        // Free items are the cheapest ones
+        const discount = allPrices.slice(0, freeItems).reduce((sum, p) => sum + p, 0)
+        totalDiscount += discount
+        appliedDeals.push({ promo, freeItems, discount })
+      }
+    })
+
+    return totalDiscount > 0 ? { amount: totalDiscount, deals: appliedDeals } : null
+  }, [cart, promotionsByProduct, promotionsByCategory])
+
+  // Calculate order-level discount (use the best one)
+  const subtotalAfterBuyXGetY = buyXGetYDiscount ? cartSubtotal - buyXGetYDiscount.amount : cartSubtotal
+
+  const orderDiscount = useMemo(() => {
+    if (orderPromotions.length === 0 || subtotalAfterBuyXGetY === 0) return null
+
+    // Find the best order-level promo (highest discount)
+    let bestPromo = null
+    let bestDiscountAmount = 0
+
+    for (const promo of orderPromotions) {
+      if (promo.type === 'percent_off') {
+        const discountAmount = subtotalAfterBuyXGetY * (promo.value / 100)
+        if (discountAmount > bestDiscountAmount) {
+          bestDiscountAmount = discountAmount
+          bestPromo = promo
+        }
+      }
+    }
+
+    return bestPromo ? { promo: bestPromo, amount: bestDiscountAmount } : null
+  }, [orderPromotions, subtotalAfterBuyXGetY])
+
+  const cartTotal = subtotalAfterBuyXGetY - (orderDiscount?.amount || 0)
 
   const handleSubmitOrder = async () => {
     if (cart.length === 0) return
@@ -278,16 +376,25 @@ export default function MenuBrowser() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {selectedCategoryData.products.map(product => {
               const emoji = getCategoryEmoji(selectedCategoryData.name)
+              const promo = getBestPromotionForProduct(product.id, selectedCategoryData.id, product.price)
+              const discountedPrice = promo ? calculateDiscountedPrice(product.price, promo) : null
 
               return (
                 <motion.button
                   key={product.id}
                   onClick={() => handleProductClick(product)}
                   whileTap={{ scale: 0.98 }}
-                  className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all text-left w-full"
+                  className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-xl transition-all text-left w-full relative"
                 >
+                  {/* Promotion Badge */}
+                  {promo && promo.badge_text && (
+                    <div className="absolute top-3 right-3 z-10 bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                      {promo.badge_text}
+                    </div>
+                  )}
+
                   {/* Visual Header */}
-                  <div className="h-20 relative bg-gradient-to-br from-amber-100 to-orange-100">
+                  <div className={`h-20 relative ${promo ? 'bg-gradient-to-br from-rose-100 to-orange-100' : 'bg-gradient-to-br from-amber-100 to-orange-100'}`}>
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className="text-4xl opacity-50">{emoji}</span>
                     </div>
@@ -299,9 +406,22 @@ export default function MenuBrowser() {
                       <p className="text-sm text-gray-500 mb-3 line-clamp-2">{product.description}</p>
                     )}
                     <div className="flex items-center justify-between">
-                      <span className="text-xl font-bold text-[#3E2723]">
-                        {formatPrice(product.price)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {discountedPrice !== null && discountedPrice !== product.price ? (
+                          <>
+                            <span className="text-xl font-bold text-[#E07A5F]">
+                              {formatPrice(discountedPrice)}
+                            </span>
+                            <span className="text-sm text-gray-400 line-through">
+                              {formatPrice(product.price)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xl font-bold text-[#3E2723]">
+                            {formatPrice(product.price)}
+                          </span>
+                        )}
+                      </div>
                       <div className={`px-4 py-2 rounded-xl font-semibold flex items-center gap-1 text-sm ${
                         product.has_modifiers
                           ? 'bg-[#3E2723] text-white'
@@ -327,17 +447,30 @@ export default function MenuBrowser() {
       </div>
 
       {/* Product Modal for items with modifiers */}
-      {productWithModifiers && !productLoading && (
-        <ProductModal
-          product={productWithModifiers}
-          isOpen={modalOpen}
-          onClose={() => {
-            setModalOpen(false)
-            setSelectedProductId(null)
-          }}
-          onAddToCart={handleAddToCartFromModal}
-        />
-      )}
+      {productWithModifiers && !productLoading && (() => {
+        const modalPromo = getBestPromotionForProduct(
+          productWithModifiers.id,
+          productWithModifiers.category_id,
+          productWithModifiers.price
+        )
+        const modalDiscountedPrice = modalPromo
+          ? calculateDiscountedPrice(productWithModifiers.price, modalPromo)
+          : undefined
+
+        return (
+          <ProductModal
+            product={productWithModifiers}
+            isOpen={modalOpen}
+            onClose={() => {
+              setModalOpen(false)
+              setSelectedProductId(null)
+            }}
+            onAddToCart={handleAddToCartFromModal}
+            promotion={modalPromo}
+            discountedBasePrice={modalDiscountedPrice}
+          />
+        )
+      })()}
 
       {/* Cart Drawer */}
       <AnimatePresence>
@@ -421,12 +554,60 @@ export default function MenuBrowser() {
 
                 {/* Cart Total */}
                 <div className="border-t border-gray-200 pt-4 mb-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-lg text-gray-600">Total:</span>
-                    <span className="text-3xl font-bold text-[#3E2723]">
-                      {formatPrice(cartTotal)}
-                    </span>
-                  </div>
+                  {(buyXGetYDiscount || orderDiscount) ? (
+                    <>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-base text-gray-500">Subtotal:</span>
+                        <span className="text-lg text-gray-500">
+                          {formatPrice(cartSubtotal)}
+                        </span>
+                      </div>
+
+                      {/* Buy X Get Y Discounts */}
+                      {buyXGetYDiscount && buyXGetYDiscount.deals.map((deal, idx) => (
+                        <div key={idx} className="flex justify-between items-center mb-2">
+                          <span className="text-base text-purple-600 flex items-center gap-2">
+                            <span className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                              {deal.promo.badge_text || `Buy ${deal.promo.buy_quantity} Get ${deal.promo.value} Free`}
+                            </span>
+                            <span className="text-xs text-gray-500">({deal.freeItems} free)</span>
+                          </span>
+                          <span className="text-lg text-purple-600 font-medium">
+                            -{formatPrice(deal.discount)}
+                          </span>
+                        </div>
+                      ))}
+
+                      {/* Order-level Discount */}
+                      {orderDiscount && (
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-base text-[#E07A5F] flex items-center gap-2">
+                            <span className="bg-gradient-to-r from-[#E07A5F] to-[#F4A261] text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                              {orderDiscount.promo.badge_text || `${orderDiscount.promo.value}% OFF`}
+                            </span>
+                            Discount
+                          </span>
+                          <span className="text-lg text-[#E07A5F] font-medium">
+                            -{formatPrice(orderDiscount.amount)}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center mb-4 pt-2 border-t border-gray-100">
+                        <span className="text-lg text-gray-600">Total:</span>
+                        <span className="text-3xl font-bold text-[#3E2723]">
+                          {formatPrice(cartTotal)}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="text-lg text-gray-600">Total:</span>
+                      <span className="text-3xl font-bold text-[#3E2723]">
+                        {formatPrice(cartTotal)}
+                      </span>
+                    </div>
+                  )}
 
                   {!tab && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">

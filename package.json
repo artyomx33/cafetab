@@ -14,6 +14,7 @@
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.26.2",
     "lucide-react": "^0.562.0",
     "motion": "^12.24.12",
     "next": "16.1.1",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "playwright": "^1.57.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
