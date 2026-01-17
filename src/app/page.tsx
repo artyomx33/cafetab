@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'motion/react'
-import { Coffee, MapPin, Sparkles } from 'lucide-react'
+import { Coffee, MapPin, Sparkles, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { restaurants } from '@/config/restaurants'
 
@@ -86,6 +86,31 @@ export default function Home() {
                 </motion.div>
               )
             })}
+
+            {/* Create New Cafe */}
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 + restaurants.length * 0.1 }}
+            >
+              <Link
+                href="/create"
+                className="rounded-xl p-5 flex items-center gap-4 border-2 border-dashed border-[var(--charcoal-700)] hover:border-[var(--gold-500)] hover:bg-[var(--gold-500)]/5 transition-all group block"
+              >
+                <div className="w-14 h-14 rounded-xl border-2 border-dashed border-[var(--charcoal-600)] group-hover:border-[var(--gold-500)] flex items-center justify-center group-hover:scale-110 transition-all">
+                  <Plus className="w-6 h-6 text-[var(--charcoal-500)] group-hover:text-[var(--gold-500)]" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-lg text-[var(--muted-foreground)] group-hover:text-white transition-colors">Create New Cafe</h3>
+                  <p className="text-sm text-[var(--charcoal-500)]">
+                    Set up your own digital menu
+                  </p>
+                </div>
+                <svg className="w-5 h-5 text-[var(--charcoal-600)] group-hover:text-[var(--gold-500)] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </motion.div>
           </div>
         </motion.div>
 

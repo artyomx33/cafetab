@@ -1,18 +1,40 @@
 import { RestaurantProvider } from '@/contexts/RestaurantContext'
-import { getRestaurant, getRestaurantSlugs } from '@/config/restaurants'
+import { getRestaurant, getRestaurantSlugs, dbToConfig, DbRestaurant } from '@/config/restaurants'
+import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 
-// Generate static params for all known restaurants
+// Generate static params for all known restaurants (hardcoded only)
 export function generateStaticParams() {
   return getRestaurantSlugs().map((slug) => ({
     restaurant: slug,
   }))
 }
 
+// Fetch restaurant from database
+async function getRestaurantFromDb(slug: string) {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('restaurants')
+    .select('*')
+    .eq('slug', slug.toLowerCase())
+    .single()
+  return data as DbRestaurant | null
+}
+
 // Generate metadata based on restaurant
 export async function generateMetadata({ params }: { params: Promise<{ restaurant: string }> }) {
   const { restaurant: slug } = await params
-  const restaurant = getRestaurant(slug)
+
+  // Check hardcoded first
+  let restaurant = getRestaurant(slug)
+
+  // If not found, check database
+  if (!restaurant) {
+    const dbRestaurant = await getRestaurantFromDb(slug)
+    if (dbRestaurant) {
+      restaurant = dbToConfig(dbRestaurant)
+    }
+  }
 
   if (!restaurant) {
     return { title: 'CafeTab' }
@@ -33,8 +55,17 @@ export default async function RestaurantLayout({
 }) {
   const { restaurant: slug } = await params
 
-  // Validate restaurant exists
-  const restaurant = getRestaurant(slug)
+  // Check hardcoded first
+  let restaurant = getRestaurant(slug)
+
+  // If not found, check database
+  if (!restaurant) {
+    const dbRestaurant = await getRestaurantFromDb(slug)
+    if (dbRestaurant) {
+      restaurant = dbToConfig(dbRestaurant)
+    }
+  }
+
   if (!restaurant) {
     notFound()
   }
