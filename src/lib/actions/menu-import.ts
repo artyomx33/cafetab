@@ -1,6 +1,6 @@
 'use server'
 
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { MenuExtractionResult, ExtractedMenuItem } from '@/types/menu-import'
 import { v4 as uuidv4 } from 'uuid'
@@ -38,14 +38,14 @@ Important:
 export async function extractMenuFromImage(
   imageUrl: string
 ): Promise<MenuExtractionResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.GOOGLE_AI_API_KEY
 
   if (!apiKey) {
     return {
       success: false,
       items: [],
       suggestedCategories: [],
-      error: 'ANTHROPIC_API_KEY not configured. Add it to your environment variables.'
+      error: 'GOOGLE_AI_API_KEY not configured. Add it to your environment variables.'
     }
   }
 
@@ -60,47 +60,22 @@ export async function extractMenuFromImage(
     const base64Image = Buffer.from(imageBuffer).toString('base64')
     const contentType = imageResponse.headers.get('content-type') || 'image/jpeg'
 
-    // Map content type to Anthropic's expected format
-    let mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/jpeg'
-    if (contentType.includes('png')) mediaType = 'image/png'
-    else if (contentType.includes('gif')) mediaType = 'image/gif'
-    else if (contentType.includes('webp')) mediaType = 'image/webp'
+    // Call Google Gemini Vision API
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
-    // Call Claude Vision API
-    const anthropic = new Anthropic({ apiKey })
-
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType,
-                data: base64Image
-              }
-            },
-            {
-              type: 'text',
-              text: EXTRACTION_PROMPT
-            }
-          ]
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: contentType,
+          data: base64Image
         }
-      ]
-    })
+      },
+      { text: EXTRACTION_PROMPT }
+    ])
 
-    // Parse response
-    const content = response.content[0]
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response format from Claude')
-    }
-
-    // Extract JSON from response (handle markdown code blocks)
-    let jsonText = content.text
+    const response = await result.response
+    let jsonText = response.text()
     const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (jsonMatch) {
       jsonText = jsonMatch[1]
@@ -142,7 +117,7 @@ export async function extractMenuFromImage(
       success: true,
       items,
       suggestedCategories,
-      rawText: content.text
+      rawText: response.text()
     }
 
   } catch (error) {
