@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogClose } from '@/components/ui/dialog'
 import { Search, Plus, Package, ChevronDown, ChevronUp, DollarSign, X } from 'lucide-react'
 import { useToast } from '@/components/ui/toast'
+import { MenuImportButton } from '@/components/admin/menu-import'
 import { createClient } from '@/lib/supabase/client'
 import type { Product } from '@/types'
 
@@ -209,6 +210,11 @@ export default function ProductsPage() {
           <p className="text-sm text-[var(--muted-foreground)] mt-1">Manage products and categories</p>
         </div>
         <div className="flex gap-2">
+          <MenuImportButton
+            restaurantId={restaurantId!}
+            existingCategories={categories}
+            onComplete={refreshCategories}
+          />
           <Button variant="secondary" className="gap-2" onClick={() => setShowCategoryDialog(true)}>
             Manage Categories
           </Button>
